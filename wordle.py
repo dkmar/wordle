@@ -1,5 +1,7 @@
 from enum import Enum
 from dataclasses import dataclass
+import functools, heapq
+
 ''' Gameplay (Hard Mode)
 1. Initial state has the target word.
 2. We play up to six rounds wherein we can make a guess and get feedback.
@@ -60,25 +62,30 @@ def getFeedback(guess: str, answer: str = 'SPLAT') -> list[Status]:
     POOCH OTHER
     _Y__Y
     """
+    feedback = [None] * 5
+    used = 0
     # label greens
-    feedback = [Status.Green if (ch == ans) else None
-                for (ch, ans) in zip(guess, answer)]
+    for i, (ch, ans) in enumerate(zip(guess, answer)):
+        if ch == ans:
+            feedback[i] = Status.Green
+            used |= (1 << i)
+
     # label yellows
     for i, (ch, fb) in enumerate(zip(guess, feedback)):
         if fb == Status.Green:
             continue
 
+        # TODO: see if it even makes sense to usr find() instead of a generator like we do in matchesWord
         j = -1
         while (j := answer.find(ch, j+1)) != -1:
-            if feedback[j] is None:
+            if not used & (1 << j):
                 feedback[i] = Status.Yellow
-                # mark j as grey for now so that it isn't reused
-                # it can later be made yellow as well.
-                feedback[j] = Status.Grey
+                used |= (1 << j)
                 break
-    # convert remaining Nones to Grey
-    return [fb if fb is not None else Status.Grey
-            for fb in feedback]
+        else:
+            feedback[i] = Status.Grey
+
+    return feedback
 
 def feedbackToStr(feedback: list[Status]) -> str:
     return ''.join(map(str, feedback))
@@ -121,6 +128,11 @@ class Guess:
 
         return True
 
+def score(word: str) -> int:
+    info = Guess(word, getFeedback(word, answer))
+    res = list(filter(info.matchesWord, wordset))
+    return len(res)
+
 wordset: set[str]
 with open('data/allowed_words.txt', 'r') as f:
     words = map(str.strip, f)
@@ -128,6 +140,18 @@ with open('data/allowed_words.txt', 'r') as f:
 
 start = "CRANE"
 answer = 'SPLAT'
+startInfo = Guess(start, getFeedback(start, answer))
+print(feedbackToStr(startInfo.feedback))
+wordset = set(filter(startInfo.matchesWord, wordset))
+print(score('BIOTA'))
+evals = []
+for word in wordset:
+    s = score(word)
+    evals.append((s, word))
+
+topk = heapq.nsmallest(10, evals)
+for s, w in topk:
+    print(f'{w}: {s}')
 
 print('POOCH', '\n', feedbackToStr(getFeedback('POOCH', 'TABOO')))
 print('POOCH', '\n', feedbackToStr(getFeedback('POOCH', 'OTHER')))
