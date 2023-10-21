@@ -1,6 +1,6 @@
 from enum import Enum
 from dataclasses import dataclass
-''' Gameplay
+''' Gameplay (Hard Mode)
 1. Initial state has the target word.
 2. We play up to six rounds wherein we can make a guess and get feedback.
 The best guess is based on our knowledge, which is our cumulative feedback.
@@ -15,11 +15,11 @@ We play a word from the wordset.
 We get feedback, this feedback prunes the wordset.
 We want to choose the next word
 - score candidates by how much they would prune the wordset
+    - maybe lets have the wordset be a list of words
+    - and every pruned wordset be a list of indices for candidate words
 - keep the top k candidates (for reporting)
 repeat by playing a candidate
 '''
-
-
 
 class Status(Enum):
     Grey = 0
@@ -83,10 +83,48 @@ def getFeedback(guess: str, answer: str = 'SPLAT') -> list[Status]:
 def feedbackToStr(feedback: list[Status]) -> str:
     return ''.join(map(str, feedback))
 
-# wordset = set()
-# with open('data/allowed_words.txt', 'r') as f:
-#     words = map(str.strip, f)
-#     wordset.update(map(str.upper, words))
+def indicesOf(word: str, ch: str):
+    for i, c in enumerate(word):
+        if c == ch:
+            yield i
+
+class Guess:
+    def __init__(self, guess: str, feedback: list[Status]):
+        self.word = guess
+        self.feedback = feedback
+
+    def matchesWord(self, word: str) -> bool:
+        used = 0
+        for i, (g, fb, w) in enumerate(zip(self.word, self.feedback, word)):
+            if fb == Status.Green:
+                if g != w:
+                    return False
+                used |= (1 << i)
+
+        for i, (g, fb, w) in enumerate(zip(self.word, self.feedback, word)):
+            if fb == Status.Green:
+                continue
+
+            if g == w:
+                return False
+
+            if fb == Status.Yellow:
+                partner = next((j for j in indicesOf(word, g) if not used&(1 << j)), None)
+                if partner is None:
+                    return False
+
+                used |= (1 << partner)
+            else:
+                partner = next((j for j in indicesOf(word, g) if not used&(1 << j)), None)
+                if partner is not None:
+                    return False
+
+        return True
+
+wordset: set[str]
+with open('data/allowed_words.txt', 'r') as f:
+    words = map(str.strip, f)
+    wordset = set(map(str.upper, words))
 
 start = "CRANE"
 answer = 'SPLAT'
@@ -95,4 +133,9 @@ print('POOCH', '\n', feedbackToStr(getFeedback('POOCH', 'TABOO')))
 print('POOCH', '\n', feedbackToStr(getFeedback('POOCH', 'OTHER')))
 print('SPLAT', '\n', feedbackToStr(getFeedback('SPLAT', 'SPLAT')))
 
+info = Guess('_OO__', getFeedback('_OO__', 'TABOO'))
+res = list(filter(info.matchesWord, wordset))
+print(len(res))
 
+# TODO add pytest and some cases
+# TODO decide on scoring / evaluation
