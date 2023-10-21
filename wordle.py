@@ -19,6 +19,9 @@ We want to choose the next word
 - score candidates by how much they would prune the wordset
     - maybe lets have the wordset be a list of words
     - and every pruned wordset be a list of indices for candidate words
+    OK this doesn't work cause you're using the answer to score candidates...
+    which is cheating lol. We need to estimate the value of a word from all
+    possible feedbacks we could get from using it.
 - keep the top k candidates (for reporting)
 repeat by playing a candidate
 '''
@@ -28,7 +31,7 @@ class Status(Enum):
     Yellow = 1
     Green = 3
 
-    def __str__(self):
+    def __repr__(self):
         match self:
             case Status.Grey:
                 return '⬛'
@@ -36,19 +39,6 @@ class Status(Enum):
                 return '🟨'
             case Status.Green:
                 return '🟩'
-#
-# @dataclass
-# class Guess:
-#     word: str
-#     mask:
-
-# '''
-# a Pattern can be 5 concatenated bitsets
-# where the color of each char is given by 00, 01, 11
-# '''
-# class Pattern:
-#     def __init__(self):
-#         self.value = 0
 
 
 def getFeedback(guess: str, answer: str = 'SPLAT') -> list[Status]:
@@ -86,9 +76,6 @@ def getFeedback(guess: str, answer: str = 'SPLAT') -> list[Status]:
             feedback[i] = Status.Grey
 
     return feedback
-
-def feedbackToStr(feedback: list[Status]) -> str:
-    return ''.join(map(str, feedback))
 
 def indicesOf(word: str, ch: str):
     for i, c in enumerate(word):
@@ -141,21 +128,21 @@ with open('data/allowed_words.txt', 'r') as f:
 start = "CRANE"
 answer = 'SPLAT'
 startInfo = Guess(start, getFeedback(start, answer))
-print(feedbackToStr(startInfo.feedback))
-wordset = set(filter(startInfo.matchesWord, wordset))
-print(score('BIOTA'))
-evals = []
-for word in wordset:
-    s = score(word)
-    evals.append((s, word))
+# print(startInfo.feedback)
+# wordset = set(filter(startInfo.matchesWord, wordset))
+# print(score('BIOTA'))
+# evals = []
+# for word in wordset:
+#     s = score(word)
+#     evals.append((s, word))
+#
+# topk = heapq.nsmallest(10, evals)
+# for s, w in topk:
+#     print(f'{w}: {s}')
 
-topk = heapq.nsmallest(10, evals)
-for s, w in topk:
-    print(f'{w}: {s}')
-
-print('POOCH', '\n', feedbackToStr(getFeedback('POOCH', 'TABOO')))
-print('POOCH', '\n', feedbackToStr(getFeedback('POOCH', 'OTHER')))
-print('SPLAT', '\n', feedbackToStr(getFeedback('SPLAT', 'SPLAT')))
+print('POOCH', '\n', getFeedback('POOCH', 'TABOO'))
+print('POOCH', '\n', getFeedback('POOCH', 'OTHER'))
+print('SPLAT', '\n', getFeedback('SPLAT', 'SPLAT'))
 
 info = Guess('_OO__', getFeedback('_OO__', 'TABOO'))
 res = list(filter(info.matchesWord, wordset))
