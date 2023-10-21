@@ -1,7 +1,9 @@
+import math
 from enum import Enum
 from dataclasses import dataclass
-import functools, heapq
+import functools, heapq, math
 from collections import UserList
+from tqdm import tqdm
 
 ''' Gameplay (Hard Mode)
 1. Initial state has the target word.
@@ -148,30 +150,46 @@ class Game:
 
 class Evaluation:
     @staticmethod
-    def score(word: str):
-        res = 0.0
-        # for code in Pattern.all_patterns():
+    def score(guess: str) -> float:
+        total_remaining = len(wordset)
+        expected_info = 0.0
+        for pattern in map(Pattern.from_int, Pattern.all_patterns()):
+            feedback = Feedback(guess, pattern)
+            matches = 0
+            for word in wordset:
+                if feedback.matchesWord(word):
+                    matches += 1
 
-wordset: set[str]
+            if matches > 0:
+                pattern_probability = matches / total_remaining
+                information = -math.log2(pattern_probability)
+                expected_info += pattern_probability * information
+
+        return expected_info
+
+
+wordset: list[str]
 with open('data/allowed_words.txt', 'r') as f:
     words = map(str.strip, f)
-    wordset = set(map(str.upper, words))
+    wordset = list(map(str.upper, words))
 
 start = "CRANE"
 answer = 'SPLAT'
 game = Game(answer)
 startInfo = game.grade_guess(start)
 print(startInfo)
-# wordset = set(filter(startInfo.matchesWord, wordset))
-# print(score('BIOTA'))
-# evals = []
-# for word in wordset:
-#     s = score(word)
-#     evals.append((s, word))
-#
-# topk = heapq.nsmallest(10, evals)
-# for s, w in topk:
-#     print(f'{w}: {s}')
+
+wordset = list(filter(startInfo.matchesWord, wordset))
+# print('BIOTA', Evaluation.score('BIOTA'))
+# print('SPLAT', Evaluation.score('SPLAT'))
+evals = []
+for word in tqdm(wordset):
+    s = Evaluation.score(word)
+    evals.append((s, word))
+
+topk = heapq.nlargest(10, evals)
+for s, w in topk:
+    print(f'{w}: {s}')
 
 print(Game('TABOO').grade_guess('POOCH'))
 print(Game('OTHER').grade_guess('POOCH'))
