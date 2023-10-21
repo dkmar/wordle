@@ -1,0 +1,30 @@
+The ngram data is from https://storage.googleapis.com/books/ngrams/books/20200217/eng/eng-1-ngrams_exports.html
+
+There are many different entries associated with a word.
+    word_NOUN
+    word.24
+    word
+    wOrd
+    woRd.ADJ
+    ...
+
+I believe the canonical records for a word are just the "word" entries (with varied capitalization). Those with _NOUN type suffixes are included in this number.
+This looks to be correct because my numbers in word_freqs.txt are identical to those on https://ngrams.dev/ (with collapse result toggled). 
+
+That being said, it might make more sense to just use the last decade or even just the most recent year's data. Recent popularity is probably a better heuristic. Using old years overweights words like "which".
+
+---
+
+For a word, it's value is how informative it is. The expected value is the expected information. 
+How informative a pattern is can be represented by how much it cuts the solution space by.
+
+Standard unit of information is the bit.
+I = -log2(P)
+"how many times we cut down our # of possibilities by half"
+"an observation has I bits of information"
+- cause log2(p) will be negative since p is 0.x
+
+E[Information] = sum (P(x) * Information(x))
+expected info from a word = sum (probability of pattern occurring * how informative that pattern is)
+                            for all possible patterns
+                            
