@@ -49,7 +49,7 @@ class Pattern(UserList):
         else:
             self.data = [None] * 5
 
-    def __repr__(self):
+    def __str__(self):
         return ''.join(map(str, self.data))
 
     @staticmethod
@@ -64,64 +64,28 @@ class Pattern(UserList):
             code //= 3
         return pattern
 
-
-
-
-def getFeedback(guess: str, answer: str = 'SPLAT') -> Pattern:
-    """
-    What should feedback look like?
-    return indices of greens and yellows.
-
-    POOCH TABOO
-    _YY__
-
-    POOCH OTHER
-    _Y__Y
-    """
-    feedback = Pattern()
-    used = 0
-    # label greens
-    for i, (ch, ans) in enumerate(zip(guess, answer)):
-        if ch == ans:
-            feedback[i] = Status.Green
-            used |= (1 << i)
-
-    # label yellows
-    for i, (ch, fb) in enumerate(zip(guess, feedback)):
-        if fb == Status.Green:
-            continue
-
-        # TODO: see if it even makes sense to usr find() instead of a generator like we do in matchesWord
-        j = -1
-        while (j := answer.find(ch, j+1)) != -1:
-            if not used & (1 << j):
-                feedback[i] = Status.Yellow
-                used |= (1 << j)
-                break
-        else:
-            feedback[i] = Status.Grey
-
-    return feedback
-
 def indicesOf(word: str, ch: str):
     for i, c in enumerate(word):
         if c == ch:
             yield i
 
-class Guess:
-    def __init__(self, guess: str, feedback: Pattern):
+class Feedback:
+    def __init__(self, guess: str, pattern: Pattern):
         self.word = guess
-        self.feedback = feedback
+        self.pattern = pattern
+
+    def __repr__(self):
+        return self.word + '\n' + str(self.pattern)
 
     def matchesWord(self, word: str) -> bool:
         used = 0
-        for i, (g, fb, w) in enumerate(zip(self.word, self.feedback, word)):
+        for i, (g, fb, w) in enumerate(zip(self.word, self.pattern, word)):
             if fb == Status.Green:
                 if g != w:
                     return False
                 used |= (1 << i)
 
-        for i, (g, fb, w) in enumerate(zip(self.word, self.feedback, word)):
+        for i, (g, fb, w) in enumerate(zip(self.word, self.pattern, word)):
             if fb == Status.Green:
                 continue
 
@@ -141,13 +105,52 @@ class Guess:
 
         return True
 
-# class Evaluation:
+class Game:
+    def __init__(self, answer: str = 'SPLAT'):
+        self.answer = answer
 
+    def grade_guess(self, guess: str) -> Feedback:
+        """
+        What should feedback look like?
+        return indices of greens and yellows.
 
-def score(word: str) -> int:
-    info = Guess(word, getFeedback(word, answer))
-    res = list(filter(info.matchesWord, wordset))
-    return len(res)
+        POOCH TABOO
+        _YY__
+
+        POOCH OTHER
+        _Y__Y
+        """
+        answer = self.answer
+        feedback = Pattern()
+        used = 0
+        # label greens
+        for i, (ch, ans) in enumerate(zip(guess, answer)):
+            if ch == ans:
+                feedback[i] = Status.Green
+                used |= (1 << i)
+
+        # label yellows
+        for i, (ch, fb) in enumerate(zip(guess, feedback)):
+            if fb == Status.Green:
+                continue
+
+            # TODO: see if it even makes sense to usr find() instead of a generator like we do in matchesWord
+            j = -1
+            while (j := answer.find(ch, j+1)) != -1:
+                if not used & (1 << j):
+                    feedback[i] = Status.Yellow
+                    used |= (1 << j)
+                    break
+            else:
+                feedback[i] = Status.Grey
+
+        return Feedback(guess, feedback)
+
+class Evaluation:
+    @staticmethod
+    def score(word: str):
+        res = 0.0
+        # for code in Pattern.all_patterns():
 
 wordset: set[str]
 with open('data/allowed_words.txt', 'r') as f:
@@ -156,8 +159,9 @@ with open('data/allowed_words.txt', 'r') as f:
 
 start = "CRANE"
 answer = 'SPLAT'
-startInfo = Guess(start, getFeedback(start, answer))
-# print(startInfo.feedback)
+game = Game(answer)
+startInfo = game.grade_guess(start)
+print(startInfo)
 # wordset = set(filter(startInfo.matchesWord, wordset))
 # print(score('BIOTA'))
 # evals = []
@@ -169,11 +173,11 @@ startInfo = Guess(start, getFeedback(start, answer))
 # for s, w in topk:
 #     print(f'{w}: {s}')
 
-print('POOCH', '\n', getFeedback('POOCH', 'TABOO'))
-print('POOCH', '\n', getFeedback('POOCH', 'OTHER'))
-print('SPLAT', '\n', getFeedback('SPLAT', 'SPLAT'))
+print(Game('TABOO').grade_guess('POOCH'))
+print(Game('OTHER').grade_guess('POOCH'))
+print(Game('SPLAT').grade_guess('SPLAT'))
 
-info = Guess('_OO__', getFeedback('_OO__', 'TABOO'))
+info = Game('TABOO').grade_guess('_OO__')
 res = list(filter(info.matchesWord, wordset))
 print(len(res))
 
@@ -184,3 +188,4 @@ print(len(res))
 
 # TODO add pytest and some cases
 # TODO decide on scoring / evaluation
+# TODO should probably delineate between pattern and feedback (word, pattern)
