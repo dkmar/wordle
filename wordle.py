@@ -1,6 +1,7 @@
 from enum import Enum
 from dataclasses import dataclass
 import functools, heapq
+from collections import UserList
 
 ''' Gameplay (Hard Mode)
 1. Initial state has the target word.
@@ -29,9 +30,9 @@ repeat by playing a candidate
 class Status(Enum):
     Grey = 0
     Yellow = 1
-    Green = 3
+    Green = 2
 
-    def __repr__(self):
+    def __str__(self):
         match self:
             case Status.Grey:
                 return '⬛'
@@ -40,8 +41,33 @@ class Status(Enum):
             case Status.Green:
                 return '🟩'
 
+class Pattern(UserList):
+    def __init__(self, initial_data=None):
+        super().__init__()
+        if initial_data:
+            self.extend(initial_data)
+        else:
+            self.data = [None] * 5
 
-def getFeedback(guess: str, answer: str = 'SPLAT') -> list[Status]:
+    def __repr__(self):
+        return ''.join(map(str, self.data))
+
+    @staticmethod
+    def all_patterns():
+        return range(3**5)
+
+    @classmethod
+    def from_int(cls, code: int):
+        pattern = cls()
+        for i in range(5):
+            pattern[i] = Status(code % 3)
+            code //= 3
+        return pattern
+
+
+
+
+def getFeedback(guess: str, answer: str = 'SPLAT') -> Pattern:
     """
     What should feedback look like?
     return indices of greens and yellows.
@@ -52,7 +78,7 @@ def getFeedback(guess: str, answer: str = 'SPLAT') -> list[Status]:
     POOCH OTHER
     _Y__Y
     """
-    feedback = [None] * 5
+    feedback = Pattern()
     used = 0
     # label greens
     for i, (ch, ans) in enumerate(zip(guess, answer)):
@@ -83,7 +109,7 @@ def indicesOf(word: str, ch: str):
             yield i
 
 class Guess:
-    def __init__(self, guess: str, feedback: list[Status]):
+    def __init__(self, guess: str, feedback: Pattern):
         self.word = guess
         self.feedback = feedback
 
@@ -114,6 +140,9 @@ class Guess:
                     return False
 
         return True
+
+# class Evaluation:
+
 
 def score(word: str) -> int:
     info = Guess(word, getFeedback(word, answer))
@@ -147,6 +176,11 @@ print('SPLAT', '\n', getFeedback('SPLAT', 'SPLAT'))
 info = Guess('_OO__', getFeedback('_OO__', 'TABOO'))
 res = list(filter(info.matchesWord, wordset))
 print(len(res))
+
+# for code in Pattern.all_patterns():
+#     pat = Pattern.from_int(code)
+#     print(pat)
+
 
 # TODO add pytest and some cases
 # TODO decide on scoring / evaluation
