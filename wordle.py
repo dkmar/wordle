@@ -1,5 +1,5 @@
 import math
-from enum import Enum
+from enum import Enum, IntEnum
 from dataclasses import dataclass
 import functools, heapq, math
 from collections import UserList
@@ -29,7 +29,7 @@ We want to choose the next word
 repeat by playing a candidate
 '''
 
-class Status(Enum):
+class Status(IntEnum):
     Grey = 0
     Yellow = 1
     Green = 2
@@ -54,6 +54,12 @@ class Pattern(UserList):
     def __str__(self):
         return ''.join(map(str, self.data))
 
+    def to_int(self) -> int:
+        code = 0
+        for status in self.data:
+            code = code * 3 + status.value
+        return code
+
     @staticmethod
     def all_patterns():
         return range(3**5)
@@ -61,7 +67,7 @@ class Pattern(UserList):
     @classmethod
     def from_int(cls, code: int):
         pattern = cls()
-        for i in range(5):
+        for i in reversed(range(5)):
             pattern[i] = Status(code % 3)
             code //= 3
         return pattern
@@ -173,6 +179,13 @@ with open('data/allowed_words.txt', 'r') as f:
     words = map(str.strip, f)
     wordset = list(map(str.upper, words))
 
+p = Pattern([Status.Grey] * 5)
+# p[0] = Status.Green
+print(p, p.to_int(), Pattern.from_int(p.to_int()))
+p = Pattern([Status.Green] * 5)
+# p[-2] = Status.Yellow
+print(p, p.to_int(), Pattern.from_int(p.to_int()))
+
 start = "CRANE"
 answer = 'SPLAT'
 game = Game(answer)
@@ -182,14 +195,14 @@ print(startInfo)
 wordset = list(filter(startInfo.matchesWord, wordset))
 # print('BIOTA', Evaluation.score('BIOTA'))
 # print('SPLAT', Evaluation.score('SPLAT'))
-evals = []
-for word in tqdm(wordset):
-    s = Evaluation.score(word)
-    evals.append((s, word))
-
-topk = heapq.nlargest(10, evals)
-for s, w in topk:
-    print(f'{w}: {s}')
+# evals = []
+# for word in tqdm(wordset):
+#     s = Evaluation.score(word)
+#     evals.append((s, word))
+#
+# topk = heapq.nlargest(10, evals)
+# for s, w in topk:
+#     print(f'{w}: {s}')
 
 print(Game('TABOO').grade_guess('POOCH'))
 print(Game('OTHER').grade_guess('POOCH'))
