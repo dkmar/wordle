@@ -72,8 +72,8 @@ class Feedback:
 
 
 class Game:
-    def __init__(self, answer: str = 'SPLAT'):
-        self.answer = answer
+    def __init__(self, answer: str):
+        self.answer = answer.upper()
 
     def grade_guess(self, guess: str) -> Feedback:
         """
@@ -86,7 +86,7 @@ class Game:
         POOCH OTHER
         _Y__Y
         """
-        answer = self.answer
+        answer, guess = self.answer, guess.upper()
         feedback = Pattern()
         used = 0
         # label greens

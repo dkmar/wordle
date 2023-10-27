@@ -19,11 +19,11 @@ class Status(IntEnum):
     @classmethod
     def from_char(cls, ch: str):
         match ch:
-            case 'B' | '_':
+            case 'B' | '_' | 'w':
                 return Status.Grey
-            case 'Y':
+            case 'Y' | 'm':
                 return Status.Yellow
-            case 'G':
+            case 'G' | 'c':
                 return Status.Green
 
 
@@ -58,5 +58,5 @@ class Pattern(UserList):
 
     @classmethod
     def from_str(cls, s: str):
-        pattern = cls(Status.from_char(ch) for ch in s.upper())
+        pattern = cls(Status.from_char(ch) for ch in s)
         return pattern
