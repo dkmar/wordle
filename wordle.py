@@ -29,6 +29,7 @@ We want to choose the next word
 repeat by playing a candidate
 '''
 
+
 class Status(IntEnum):
     Grey = 0
     Yellow = 1
@@ -42,6 +43,17 @@ class Status(IntEnum):
                 return '🟨'
             case Status.Green:
                 return '🟩'
+
+    @classmethod
+    def from_char(cls, ch: str):
+        match ch:
+            case 'b':
+                return Status.Grey
+            case 'y':
+                return Status.Yellow
+            case 'g':
+                return Status.Green
+
 
 class Pattern(UserList):
     def __init__(self, initial_data=None):
@@ -62,7 +74,7 @@ class Pattern(UserList):
 
     @staticmethod
     def all_patterns():
-        return range(3**5)
+        return range(3 ** 5)
 
     @classmethod
     def from_int(cls, code: int):
@@ -72,10 +84,17 @@ class Pattern(UserList):
             code //= 3
         return pattern
 
+    @classmethod
+    def from_str(cls, s: str):
+        pattern = cls(Status.from_char(ch) for ch in s)
+        return pattern
+
+
 def indicesOf(word: str, ch: str):
     for i, c in enumerate(word):
         if c == ch:
             yield i
+
 
 class Feedback:
     def __init__(self, guess: str, pattern: Pattern):
@@ -101,17 +120,18 @@ class Feedback:
                 return False
 
             if fb == Status.Yellow:
-                partner = next((j for j in indicesOf(word, g) if not used&(1 << j)), None)
+                partner = next((j for j in indicesOf(word, g) if not used & (1 << j)), None)
                 if partner is None:
                     return False
 
                 used |= (1 << partner)
             else:
-                partner = next((j for j in indicesOf(word, g) if not used&(1 << j)), None)
+                partner = next((j for j in indicesOf(word, g) if not used & (1 << j)), None)
                 if partner is not None:
                     return False
 
         return True
+
 
 class Game:
     def __init__(self, answer: str = 'SPLAT'):
@@ -144,7 +164,7 @@ class Game:
 
             # TODO: see if it even makes sense to usr find() instead of a generator like we do in matchesWord
             j = -1
-            while (j := answer.find(ch, j+1)) != -1:
+            while (j := answer.find(ch, j + 1)) != -1:
                 if not used & (1 << j):
                     feedback[i] = Status.Yellow
                     used |= (1 << j)
@@ -154,15 +174,16 @@ class Game:
 
         return Feedback(guess, feedback)
 
+
 class Evaluation:
     @staticmethod
     def score(guess: str) -> float:
-        total_remaining = len(wordset)
+        total_remaining = len(relevant_words)
         expected_info = 0.0
         for pattern in map(Pattern.from_int, Pattern.all_patterns()):
             feedback = Feedback(guess, pattern)
             matches = 0
-            for word in wordset:
+            for word in relevant_words:
                 if feedback.matchesWord(word):
                     matches += 1
 
@@ -172,6 +193,17 @@ class Evaluation:
                 expected_info += pattern_probability * information
 
         return expected_info
+
+    @staticmethod
+    def topk(wordset: list[str], k: int = 10):
+        evals = []
+        for word in tqdm(relevant_words):
+            s = Evaluation.score(word)
+            evals.append((s, word))
+
+        top = heapq.nlargest(k, evals)
+        for s, w in top:
+            print(f'{w}: {s}')
 
 
 wordset: list[str]
@@ -192,11 +224,19 @@ game = Game(answer)
 startInfo = game.grade_guess(start)
 print(startInfo)
 
-wordset = list(filter(startInfo.matchesWord, wordset))
+# wordset = list(filter(startInfo.matchesWord, wordset))
+relevant_words: list[str]
+with open('data/relevant_words.txt', 'r') as f:
+    words = map(str.strip, f)
+    relevant_words = list(map(str.upper, words))
+
 # print('BIOTA', Evaluation.score('BIOTA'))
 # print('SPLAT', Evaluation.score('SPLAT'))
+# relevant_words = list(filter(startInfo.matchesWord, relevant_words))
+# nextInfo = game.grade_guess('TAILS')
+# relevant_words = list(filter(nextInfo.matchesWord, relevant_words))
 # evals = []
-# for word in tqdm(wordset):
+# for word in tqdm(relevant_words):
 #     s = Evaluation.score(word)
 #     evals.append((s, word))
 #
@@ -204,13 +244,13 @@ wordset = list(filter(startInfo.matchesWord, wordset))
 # for s, w in topk:
 #     print(f'{w}: {s}')
 
-print(Game('TABOO').grade_guess('POOCH'))
-print(Game('OTHER').grade_guess('POOCH'))
-print(Game('SPLAT').grade_guess('SPLAT'))
-
-info = Game('TABOO').grade_guess('_OO__')
-res = list(filter(info.matchesWord, wordset))
-print(len(res))
+# print(Game('TABOO').grade_guess('POOCH'))
+# print(Game('OTHER').grade_guess('POOCH'))
+# print(Game('SPLAT').grade_guess('SPLAT'))
+#
+# info = Game('TABOO').grade_guess('_OO__')
+# res = list(filter(info.matchesWord, wordset))
+# print(len(res))
 
 # for code in Pattern.all_patterns():
 #     pat = Pattern.from_int(code)
