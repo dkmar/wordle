@@ -1,0 +1,27 @@
+[project]
+name = "wordle"
+version = "0.1"
+description = "Utility for solving and exploring wordle puzzles."
+readme = "README.md"
+authors = [{name = "Daniel Mar"}]
+license = {text = "Apache-2.0"}
+requires-python = ">=3.8"
+classifiers = [
+    "License :: OSI Approved :: Apache Software License"
+]
+dependencies = [
+    "click",
+    "tqdm"
+]
+
+[project.urls]
+Homepage = "https://github.com/dkmar/wordle"
+Changelog = "https://github.com/dkmar/wordle/releases"
+Issues = "https://github.com/dkmar/wordle/issues"
+CI = "https://github.com/dkmar/wordle/actions"
+
+[project.entry-points.console_scripts]
+wordle = "wordle.cli:cli"
+
+[project.optional-dependencies]
+test = ["pytest"]

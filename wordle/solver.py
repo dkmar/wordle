@@ -47,11 +47,11 @@ class Status(IntEnum):
     @classmethod
     def from_char(cls, ch: str):
         match ch:
-            case 'b':
+            case 'B' | '_':
                 return Status.Grey
-            case 'y':
+            case 'Y':
                 return Status.Yellow
-            case 'g':
+            case 'G':
                 return Status.Green
 
 
@@ -86,7 +86,7 @@ class Pattern(UserList):
 
     @classmethod
     def from_str(cls, s: str):
-        pattern = cls(Status.from_char(ch) for ch in s)
+        pattern = cls(Status.from_char(ch) for ch in s.upper())
         return pattern
 
 
@@ -205,11 +205,11 @@ class Evaluation:
         for s, w in top:
             print(f'{w}: {s}')
 
-
 wordset: list[str]
-with open('data/allowed_words.txt', 'r') as f:
+with open('wordle/data/relevant_words.txt', 'r') as f:
     words = map(str.strip, f)
     wordset = list(map(str.upper, words))
+
 
 p = Pattern([Status.Grey] * 5)
 # p[0] = Status.Green
@@ -226,7 +226,7 @@ print(startInfo)
 
 # wordset = list(filter(startInfo.matchesWord, wordset))
 relevant_words: list[str]
-with open('data/relevant_words.txt', 'r') as f:
+with open('wordle/data/relevant_words.txt', 'r') as f:
     words = map(str.strip, f)
     relevant_words = list(map(str.upper, words))
 

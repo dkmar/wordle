@@ -1,1 +1,11 @@
 **/.DS_Store
+.fleet
+.venv
+__pycache__/
+*.py[cod]
+*$py.class
+venv
+.eggs
+.pytest_cache
+*.egg-info
+.idea
