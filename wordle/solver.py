@@ -36,7 +36,7 @@ def indicesOf(word: str, ch: str):
 
 class Feedback:
     def __init__(self, guess: str, pattern: Pattern):
-        self.word = guess
+        self.word = guess.upper()
         self.pattern = pattern
 
     def __repr__(self):
@@ -113,15 +113,33 @@ class Game:
         return Feedback(guess, feedback)
 
 
+class Solver:
+    def __init__(self, wordset: list[str]):
+        self.wordset = wordset
+        self.history = []
+
+    def play(self, guess: str, feedback: str):
+        fb = Feedback(guess, Pattern.from_str(feedback))
+        self.wordset = list(filter(fb.matchesWord, self.wordset))
+
+        self.history.append(fb)
+        return fb
+
+    def suggestions(self):
+        return Evaluation.topk(self.wordset)
+        # for word, score in Evaluation.topk(self.wordset):
+        #     print(f'{word}: {score}')
+
+
 class Evaluation:
     @staticmethod
-    def score(guess: str) -> float:
-        total_remaining = len(relevant_words)
+    def score(wordset: list[str], guess: str) -> float:
+        total_remaining = len(wordset)
         expected_info = 0.0
         for pattern in map(Pattern.from_int, Pattern.all_patterns()):
             feedback = Feedback(guess, pattern)
             matches = 0
-            for word in relevant_words:
+            for word in wordset:
                 if feedback.matchesWord(word):
                     matches += 1
 
@@ -135,32 +153,33 @@ class Evaluation:
     @staticmethod
     def topk(wordset: list[str], k: int = 10):
         evals = []
-        for word in tqdm(relevant_words):
-            s = Evaluation.score(word)
-            evals.append((s, word))
+        for word in tqdm(wordset):
+            score = Evaluation.score(wordset, word)
+            evals.append((score, word))
 
         top = heapq.nlargest(k, evals)
-        for s, w in top:
-            print(f'{w}: {s}')
+        for score, word in top:
+            yield word, score
+
 
 wordset: list[str]
 with open('wordle/data/relevant_words.txt', 'r') as f:
     words = map(str.strip, f)
     wordset = list(map(str.upper, words))
 
-
-p = Pattern([Status.Grey] * 5)
-# p[0] = Status.Green
-print(p, p.to_int(), Pattern.from_int(p.to_int()))
-p = Pattern([Status.Green] * 5)
-# p[-2] = Status.Yellow
-print(p, p.to_int(), Pattern.from_int(p.to_int()))
-
-start = "CRANE"
-answer = 'SPLAT'
-game = Game(answer)
-startInfo = game.grade_guess(start)
-print(startInfo)
+# TODO test int conversions
+# p = Pattern([Status.Grey] * 5)
+# # p[0] = Status.Green
+# print(p, p.to_int(), Pattern.from_int(p.to_int()))
+# p = Pattern([Status.Green] * 5)
+# # p[-2] = Status.Yellow
+# print(p, p.to_int(), Pattern.from_int(p.to_int()))
+#
+# start = "CRANE"
+# answer = 'SPLAT'
+# game = Game(answer)
+# startInfo = game.grade_guess(start)
+# print(startInfo)
 
 # wordset = list(filter(startInfo.matchesWord, wordset))
 relevant_words: list[str]
