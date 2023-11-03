@@ -2,7 +2,6 @@ import heapq, math
 from tqdm import tqdm
 
 from wordle.lib import Status, Pattern
-
 ''' Gameplay (Hard Mode)
 1. Initial state has the target word.
 2. We play up to six rounds wherein we can make a guess and get feedback.
@@ -28,44 +27,41 @@ repeat by playing a candidate
 '''
 
 
-def indicesOf(word: str, ch: str):
-    for i, c in enumerate(word):
-        if c == ch:
-            yield i
-
-
 class Feedback:
     def __init__(self, guess: str, pattern: Pattern):
-        self.word = guess.upper()
+        self.guess = guess
         self.pattern = pattern
 
     def __repr__(self):
-        return self.word + '\n' + str(self.pattern)
+        return self.guess + '\n' + str(self.pattern)
 
     def matchesWord(self, word: str) -> bool:
         used = 0
-        for i, (g, fb, w) in enumerate(zip(self.word, self.pattern, word)):
+
+        for i, (g, fb, w) in enumerate(zip(self.guess, self.pattern, word)):
             if fb == Status.Green:
                 if g != w:
                     return False
                 used |= (1 << i)
 
-        for i, (g, fb, w) in enumerate(zip(self.word, self.pattern, word)):
+        for i, (g, fb, w) in enumerate(zip(self.guess, self.pattern, word)):
             if fb == Status.Green:
                 continue
 
             if g == w:
                 return False
 
-            if fb == Status.Yellow:
-                partner = next((j for j in indicesOf(word, g) if not used & (1 << j)), None)
-                if partner is None:
-                    return False
+            for j, ch in enumerate(word):
+                if ch == g and not used & (1 << j):
+                    if fb == Status.Grey:
+                        # should be yellow
+                        return False
 
-                used |= (1 << partner)
+                    used |= (1 << j)
+                    break
             else:
-                partner = next((j for j in indicesOf(word, g) if not used & (1 << j)), None)
-                if partner is not None:
+                if fb == Status.Yellow:
+                    # should be grey
                     return False
 
         return True
@@ -118,8 +114,11 @@ class Solver:
         self.wordset = wordset
         self.history = []
 
+    def solved(self) -> bool:
+        return len(self.wordset) == 1
+
     def play(self, guess: str, feedback: str):
-        fb = Feedback(guess, Pattern.from_str(feedback))
+        fb = Feedback(guess.upper(), Pattern.from_str(feedback))
         self.wordset = list(filter(fb.matchesWord, self.wordset))
 
         self.history.append(fb)
@@ -132,16 +131,18 @@ class Solver:
 
 
 class Evaluation:
+    ALL_PATTERNS = tuple(map(Pattern.from_int, Pattern.all_patterns()))
     @staticmethod
     def score(wordset: list[str], guess: str) -> float:
         total_remaining = len(wordset)
         expected_info = 0.0
-        for pattern in map(Pattern.from_int, Pattern.all_patterns()):
+        for pattern in Evaluation.ALL_PATTERNS:
             feedback = Feedback(guess, pattern)
-            matches = 0
-            for word in wordset:
-                if feedback.matchesWord(word):
-                    matches += 1
+            matches = sum(map(feedback.matchesWord, wordset))
+            # matches = 0
+            # for word in wordset:
+            #     if feedback.matchesWord(word):
+            #         matches += 1
 
             if matches > 0:
                 pattern_probability = matches / total_remaining
@@ -162,10 +163,10 @@ class Evaluation:
             yield word, score
 
 
-wordset: list[str]
-with open('wordle/data/relevant_words.txt', 'r') as f:
-    words = map(str.strip, f)
-    wordset = list(map(str.upper, words))
+# wordset: list[str]
+# with open('wordle/data/relevant_words.txt', 'r') as f:
+#     words = map(str.strip, f)
+#     wordset = list(map(str.upper, words))
 
 # TODO test int conversions
 # p = Pattern([Status.Grey] * 5)
@@ -217,3 +218,4 @@ with open('wordle/data/relevant_words.txt', 'r') as f:
 # TODO add pytest and some cases
 # TODO decide on scoring / evaluation
 # TODO should probably delineate between pattern and feedback (word, pattern)
+
