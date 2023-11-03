@@ -13,11 +13,11 @@ def play():
     "Play a game interactively."
     solver = Solver(relevant_words)
 
-    for _ in range(7):
+    while not solver.solved():
         guess = click.prompt('Guess')
         feedback = click.prompt('Feedback')
         fb = solver.play(guess, feedback.upper())
-        click.echo(fb, color=True)
+        click.echo(fb)
 
         click.echo('\n'.join(
             f'\t{word}: {score}'
