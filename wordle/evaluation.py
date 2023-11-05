@@ -1,7 +1,4 @@
-import numpy.typing
-
-from wordle.lib import Pattern, Status
-from collections.abc import Mapping
+from wordle.feedback import compute_guess_feedbacks_array
 import numpy as np
 import itertools
 
@@ -55,49 +52,8 @@ pattern_index = {pattern: np.uint8(i)
 #
 #     return ''.join(feedback)
 
-def grade_guess(guess: str, answer: str) -> str:
-    """
-    What should feedback look like?
-    return indices of greens and yellows.
-
-    POOCH TABOO
-    _YY__
-
-    POOCH OTHER
-    _Y__Y
-    """
-    feedback = ['⬛'] * 5
-    used = 0
-
-    # label greens
-    for i, (ch, ans) in enumerate(zip(guess, answer)):
-        if ch == ans:
-            feedback[i] = '🟩'
-            used |= (1 << i)
-
-    # label yellows
-    for i, (ch, fb) in enumerate(zip(guess, feedback)):
-        if fb == '⬛':
-            j = answer.find(ch)
-            while j != -1:
-                if not used & (1 << j):
-                    feedback[i] = '🟨'
-                    used |= (1 << j)
-                    break
-
-                j = answer.find(ch, j + 1)
-
-    return ''.join(feedback)
-
-
-def feedbacks_for_guess(guess: str, answers: tuple[str] = ANSWERS, pattern_id: Mapping[str, np.uint8] = pattern_index):
-    return [pattern_id[grade_guess(guess, answer)] for answer in answers]
-
-
-# feedback: feedback for each answer if we used this guess
-# guess_id -> [feedback pattern for answer in ANSWERS]
 FeedbackType = np.dtype((np.uint8, len(ANSWERS)))
-guess_feedbacks = np.fromiter(map(feedbacks_for_guess, GUESSES), dtype=FeedbackType, count=len(GUESSES))
+
 
 
 def score(guess_id: np.uint16, feedbacks: np.ndarray[FeedbackType]) -> np.float64:
@@ -147,6 +103,16 @@ def best_guesses(possible_words: np.ndarray, k: int = 10):
         res.append((guess, scores[ind]))
 
     return res
+
+if __name__ == '__main__':
+    # feedback: feedback for each answer if we used this guess
+    # guess_id -> [feedback pattern for answer in ANSWERS]
+    # FeedbackType = np.dtype((np.uint8, len(ANSWERS)))
+    # guess_feedbacks = np.fromiter(map(feedbacks_for_guess, GUESSES), dtype=FeedbackType, count=len(GUESSES))
+    guess_feedbacks = compute_guess_feedbacks_array(GUESSES, ANSWERS, pattern_index)
+    pa = np.arange(len(ANSWERS))
+    for guess, score in best_guesses(pa):
+        print(f'\t{guess}: {score}')
 
 # evals = []
 # for guess in GUESSES:
