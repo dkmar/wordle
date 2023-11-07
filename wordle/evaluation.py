@@ -1,4 +1,5 @@
 from wordle.feedback import compute_guess_feedbacks_array
+from wordle.lib import Pattern
 import numpy as np
 import itertools
 
@@ -12,8 +13,7 @@ guess_index = {guess: np.uint16(i)
                for i, guess in enumerate(GUESSES)}
 
 pattern_index = {pattern: np.uint8(i)
-                 for i, pattern in enumerate(ALL_PATTERNS)}
-
+                 for i, pattern in enumerate(Pattern.ALL_PATTERNS)}
 
 try:
     guess_feedbacks_array = np.load('wordle/data/guess_feedbacks_array.npy')
