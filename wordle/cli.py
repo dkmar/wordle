@@ -1,8 +1,8 @@
 import click
 import itertools
-# from .solver import *
 import wordle.evaluation as evaluation
-from .solver import Pattern, Feedback
+from wordle.lib import Pattern
+from wordle.evaluation import guess_index, get_possible_words, best_guess, guess_feedbacks_array, refine_wordset
 
 
 @click.group()
@@ -28,12 +28,52 @@ def play():
         feedback = click.prompt('Feedback').upper()
 
         # fb = solver.play(guess, feedback.upper())
-        fb = str(Pattern.from_str(feedback))
+        fb = Pattern.from_str(feedback)
         actual_entropy = evaluation.actual_info_from_guess(guess, fb, possible_words)
         click.echo(guess)
         click.echo(f'{fb} {actual_entropy} Bits')
 
         possible_words = evaluation.refine_possible_words(possible_words, guess, fb)
+
+@cli.command()
+@click.argument("n", type=int, required=False)
+def bench(n: int | None):
+    with open('wordle/data/wordle-nyt-answers-alphabetical.txt', 'r') as f:
+        words = map(str.strip, f)
+        REAL_ANSWER_SET = tuple(map(str.upper, words))
+
+    def solve(answer_id: int):
+        possible_words = get_possible_words()
+        rounds = 1
+        while possible_words.size > 1:
+            guess_id = best_guess(possible_words)
+            feedback_id = guess_feedbacks_array[guess_id, answer_id]
+
+            if Pattern.ALL_PATTERNS[feedback_id] == '🟩🟩🟩🟩🟩':
+                return rounds
+
+            possible_words = refine_wordset(possible_words, guess_id, feedback_id)
+            rounds += 1
+
+        return rounds
+
+    answers = REAL_ANSWER_SET[:n] if n else REAL_ANSWER_SET
+    N = len(answers)
+    total_rounds_needed = 0
+
+    answers_ids = (guess_index[answer] for answer in answers)
+    rounds_needed = map(solve, answers_ids)
+    items = zip(range(1, N+1), answers, rounds_needed)
+    print_info = lambda item: f'[{item[0]}] {item[1]} {item[2]} {total_rounds_needed/item[0]}' if item else None
+
+    with click.progressbar(items,
+                           length=N,
+                           item_show_func=print_info) as solution_info:
+        for i, ans, rnds in solution_info:
+            total_rounds_needed += rnds
+
+    avg = total_rounds_needed / N
+    click.echo(f'Average: {avg}')
 
 @cli.command(name="command")
 @click.argument(

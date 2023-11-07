@@ -46,6 +46,11 @@ def actual_info_from_guess(guess: str, feedback: str, possible_words: np.ndarray
 def get_possible_words():
     return np.arange(len(ANSWERS))
 
+def refine_wordset(possible_words: np.ndarray, guess_id: int, feedback_id: int):
+    # current subset of answers
+    subset = guess_feedbacks_array[guess_id, possible_words]
+    next_possible_words = possible_words[subset == feedback_id]
+    return next_possible_words
 
 def refine_possible_words(possible_words: np.ndarray, guess: str, feedback: str):
     guess_id = guess_index[guess]
@@ -56,6 +61,13 @@ def refine_possible_words(possible_words: np.ndarray, guess: str, feedback: str)
     next_possible_words = possible_words[subset == pattern_id]
     return next_possible_words
 
+
+def best_guess(possible_words: np.ndarray) -> int:
+    feedbacks = guess_feedbacks_array[:, possible_words]
+
+    scores = np.array([score(guess_id, feedbacks) for guess_id in possible_words])
+    guess_id = possible_words[scores.argmax()]
+    return guess_id
 
 def best_guesses(possible_words: np.ndarray, k: int = 10):
     feedbacks = guess_feedbacks_array[:, possible_words]
