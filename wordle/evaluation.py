@@ -21,6 +21,16 @@ except (OSError, ValueError) as e:
     guess_feedbacks_array = compute_guess_feedbacks_array(GUESSES, ANSWERS, pattern_index)
     np.save('wordle/data/guess_feedbacks_array.npy', guess_feedbacks_array)
 
+with open('wordle/data/word_freqs_sorted.txt', 'r') as f:
+    lines = map(str.strip, f)
+    freqs = [0] * len(GUESSES)
+    for word, count in map(str.split, lines):
+        word = word.upper()
+        if word in guess_index:
+            i = guess_index[word]
+            freqs[i] = int(count)
+
+    freqs = np.array(freqs)
 
 def score(guess_id: np.uint16, feedbacks: np.ndarray[np.uint8]) -> np.float64:
     fbs = feedbacks[guess_id]
@@ -65,14 +75,24 @@ def refine_possible_words(possible_words: np.ndarray, guess: str, feedback: str)
 def best_guess(possible_words: np.ndarray) -> int:
     feedbacks = guess_feedbacks_array[:, possible_words]
 
-    scores = np.array([score(guess_id, feedbacks) for guess_id in possible_words])
+    exp_info = np.array([score(guess_id, feedbacks) for guess_id in possible_words])
+    candidate_freqs = freqs[possible_words]
+    p_is_word = candidate_freqs / candidate_freqs.sum()
+    scores = exp_info + p_is_word
+    # scores = p_is_word * np.log2(possible_words.size) + (1 - p_is_word) * (exp_info)
+
     guess_id = possible_words[scores.argmax()]
     return guess_id
 
 def best_guesses(possible_words: np.ndarray, k: int = 10):
     feedbacks = guess_feedbacks_array[:, possible_words]
 
-    scores = np.array([score(guess_id, feedbacks) for guess_id in possible_words])
+    exp_info = np.array([score(guess_id, feedbacks) for guess_id in possible_words])
+    candidate_freqs = freqs[possible_words]
+    p_is_word = candidate_freqs / candidate_freqs.sum()
+    scores = exp_info + p_is_word
+    # scores = p_is_word + (1 - p_is_word) * exp_info
+
     best_ids = scores.argsort()[::-1]
 
     res = []
