@@ -2,7 +2,7 @@ import click
 import itertools
 import wordle.evaluation as evaluation
 from wordle.lib import Pattern
-from wordle.evaluation import guess_index, get_possible_words, best_guess, guess_feedbacks_array, refine_wordset
+from wordle.evaluation import GUESSES, guess_index, get_possible_words, best_guess, guess_feedbacks_array, refine_wordset
 
 
 @click.group()
@@ -38,14 +38,19 @@ def play():
 @cli.command()
 @click.argument("n", type=int, required=False)
 @click.option("-w", "--w", "starting_word", default='SLATE', help='Set a starting word.')
-def bench(n: int | None, starting_word: str):
+@click.option("-v", "verbose", is_flag=True)
+def bench(n: int | None, starting_word: str, verbose:  bool):
     with open('wordle/data/wordle-nyt-answers-alphabetical.txt', 'r') as f:
         words = map(str.strip, f)
         REAL_ANSWER_SET = tuple(map(str.upper, words))
 
     def solve(answer_id: int):
+        # if verbose:
+        #     print('\n', GUESSES[answer_id])
         possible_words = get_possible_words()
         guess_id = guess_index[starting_word]
+        if verbose:
+            print('\n  ', GUESSES[guess_id])
         feedback_id = guess_feedbacks_array[guess_id, answer_id]
 
         rounds = 1
@@ -54,6 +59,8 @@ def bench(n: int | None, starting_word: str):
 
             rounds += 1
             guess_id = best_guess(possible_words)
+            if verbose:
+                print('  ', GUESSES[guess_id])
             feedback_id = guess_feedbacks_array[guess_id, answer_id]
 
         return rounds
