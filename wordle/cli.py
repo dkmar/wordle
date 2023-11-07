@@ -37,23 +37,24 @@ def play():
 
 @cli.command()
 @click.argument("n", type=int, required=False)
-def bench(n: int | None):
+@click.option("-w", "--w", "starting_word", default='SLATE', help='Set a starting word.')
+def bench(n: int | None, starting_word: str):
     with open('wordle/data/wordle-nyt-answers-alphabetical.txt', 'r') as f:
         words = map(str.strip, f)
         REAL_ANSWER_SET = tuple(map(str.upper, words))
 
     def solve(answer_id: int):
         possible_words = get_possible_words()
+        guess_id = guess_index[starting_word]
+        feedback_id = guess_feedbacks_array[guess_id, answer_id]
+
         rounds = 1
-        while possible_words.size > 1:
+        while Pattern.ALL_PATTERNS[feedback_id] != '🟩🟩🟩🟩🟩':
+            possible_words = refine_wordset(possible_words, guess_id, feedback_id)
+
+            rounds += 1
             guess_id = best_guess(possible_words)
             feedback_id = guess_feedbacks_array[guess_id, answer_id]
-
-            if Pattern.ALL_PATTERNS[feedback_id] == '🟩🟩🟩🟩🟩':
-                return rounds
-
-            possible_words = refine_wordset(possible_words, guess_id, feedback_id)
-            rounds += 1
 
         return rounds
 
