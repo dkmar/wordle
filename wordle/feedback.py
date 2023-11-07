@@ -41,8 +41,8 @@ def grade_guess(guess: str, answer: str) -> str:
     return ''.join(feedback)
 
 
-def feedbacks_for_guess(guess: str, answers: tuple[str], pattern_id: Mapping[str, np.uint8]) -> list[np.uint8]:
-    return [pattern_id[grade_guess(guess, answer)] for answer in answers]
+def feedbacks_for_guess(guess: str, answers: tuple[str], pattern_id: Mapping[str, np.uint8]) -> tuple[np.uint8]:
+    return tuple(pattern_id[grade_guess(guess, answer)] for answer in answers)
 
 
 def compute_guess_feedbacks_array(guesses: tuple[str, ...],
