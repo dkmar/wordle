@@ -64,7 +64,8 @@ def bench(n: int | None, starting_word: str, verbose:  bool):
             possible_words = w.refine_wordset(possible_words, guess_id, feedback_id)
 
             rounds += 1
-            guess_id = w.best_guess(possible_words)
+            # guess_id = w.best_guess(possible_words)
+            guess_id = w.best_guess_3b1b(possible_words, extra_depth=True)
             if verbose:
                 print('  ', w.guesses[guess_id])
             feedback_id = w.guess_feedbacks_array[guess_id, answer_id]
