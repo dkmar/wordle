@@ -1,9 +1,13 @@
 import click
 import itertools
-import wordle.evaluation as evaluation
+# import wordle.evaluation as evaluation
 from wordle.lib import Pattern
-from wordle.evaluation import GUESSES, guess_index, get_possible_words, best_guess, guess_feedbacks_array, refine_wordset
-
+from wordle.solver import Wordle
+# if __name__ == '__main__':
+#     import wordle.evaluation as evaluation
+#     from wordle.evaluation import GUESSES, guess_index, get_possible_words, best_guess, guess_feedbacks_array, refine_wordset
+# from wordle.evaluation import GUESSES, guess_index, get_possible_words, best_guess, guess_feedbacks_array, \
+#         refine_wordset
 
 @click.group()
 @click.version_option()
@@ -14,6 +18,7 @@ def cli():
 @cli.command()
 def play():
     "Play a game interactively."
+    import wordle.evaluation as evaluation
     # solver = Solver(relevant_words)
     possible_words = evaluation.get_possible_words()
 
@@ -40,6 +45,7 @@ def play():
 @click.option("-w", "--w", "starting_word", default='SLATE', help='Set a starting word.')
 @click.option("-v", "verbose", is_flag=True)
 def bench(n: int | None, starting_word: str, verbose:  bool):
+    w = Wordle()
     with open('wordle/data/wordle-nyt-answers-alphabetical.txt', 'r') as f:
         words = map(str.strip, f)
         REAL_ANSWER_SET = tuple(map(str.upper, words))
@@ -47,21 +53,21 @@ def bench(n: int | None, starting_word: str, verbose:  bool):
     def solve(answer_id: int):
         # if verbose:
         #     print('\n', GUESSES[answer_id])
-        possible_words = get_possible_words()
-        guess_id = guess_index[starting_word]
+        possible_words = w.get_possible_words()
+        guess_id = w.word_index[starting_word]
         if verbose:
-            print('\n  ', GUESSES[guess_id])
-        feedback_id = guess_feedbacks_array[guess_id, answer_id]
+            print('\n  ', w.guesses[guess_id])
+        feedback_id = w.guess_feedbacks_array[guess_id, answer_id]
 
         rounds = 1
         while Pattern.ALL_PATTERNS[feedback_id] != '🟩🟩🟩🟩🟩':
-            possible_words = refine_wordset(possible_words, guess_id, feedback_id)
+            possible_words = w.refine_wordset(possible_words, guess_id, feedback_id)
 
             rounds += 1
-            guess_id = best_guess(possible_words)
+            guess_id = w.best_guess(possible_words)
             if verbose:
-                print('  ', GUESSES[guess_id])
-            feedback_id = guess_feedbacks_array[guess_id, answer_id]
+                print('  ', w.guesses[guess_id])
+            feedback_id = w.guess_feedbacks_array[guess_id, answer_id]
 
         return rounds
 
@@ -69,7 +75,7 @@ def bench(n: int | None, starting_word: str, verbose:  bool):
     N = len(answers)
     total_rounds_needed = 0
 
-    answers_ids = (guess_index[answer] for answer in answers)
+    answers_ids = (w.word_index[answer] for answer in answers)
     rounds_needed = map(solve, answers_ids)
     items = zip(range(1, N+1), answers, rounds_needed)
     print_info = lambda item: f'[{item[0]}] {item[1]} {item[2]} {total_rounds_needed/item[0]}' if item else None
