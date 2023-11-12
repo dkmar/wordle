@@ -1,8 +1,10 @@
+import functools
 from typing import Mapping
 
 from wordle.feedback import get_guess_feedbacks_array
 from wordle.lib import Pattern
 import numpy as np
+
 ''' Gameplay (Hard Mode)
 1. Initial state has the target word.
 2. We play up to six rounds wherein we can make a guess and get feedback.
@@ -48,6 +50,7 @@ def get_word_frequencies(word_index: Mapping[str, int]) -> np.ndarray:
         return np.array(freqs)
 
 
+
 class Wordle:
     def __init__(self):
         self.guesses = GUESSES
@@ -59,33 +62,83 @@ class Wordle:
                               for i, pattern in enumerate(Pattern.ALL_PATTERNS)}
         self.guess_feedbacks_array = get_guess_feedbacks_array(self.guesses, self.answers, self.pattern_index)
         self.word_freqs = get_word_frequencies(self.word_index)
+        self.relative_word_freqs = self.word_freqs / self.word_freqs.sum()
 
-    def score(self, guess_id: np.uint16, possible_words) -> np.float64:
-        fbs = self.guess_feedbacks_array[guess_id, possible_words]
+    def feedback_inverted_index(self, feedbacks, feedback_counts):
+        # feedbacks = self.guess_feedbacks_array[guess_id]
 
-        unique_patterns, feedback_freqs = np.unique(fbs, return_counts=True)
-        scaled_freq_of_feedbacks = feedback_freqs / fbs.shape[0]
+        # inverted index. pattern to words
+        indices = np.argsort(feedbacks)
+        # feedback_freqs = np.bincount(feedbacks)
+        answers_matching_pattern = np.split(indices, np.cumsum(feedback_counts)[:-1])
 
-        # pattern_freqs = []
-        # candidate_freqs = self.word_freqs[possible_words]
-        # for pat in unique_patterns:
-        #     ind = np.where(fbs == pat)
-        #     pat_freq = candidate_freqs[ind].sum()
-        #     pattern_freqs.append(pat_freq)
-        #
-        # scaled_freq_of_feedbacks = np.array(pattern_freqs) / candidate_freqs.sum()
+        return answers_matching_pattern
 
-        # p_is_word = candidate_freqs / candidate_freqs.sum()
-        #
-        # probabilities = scaled_freq_of_feedbacks * p_is_word
-        information = -np.log2(scaled_freq_of_feedbacks)
-        # try:
-        #     np.seterr(all='raise')
-        #     information = -np.log2(scaled_freq_of_feedbacks)
-        # except FloatingPointError as e:
-        #     breakpoint()
-        # expected info. aka (probabilities * information).sum()
-        return scaled_freq_of_feedbacks.dot(information)
+    def entropy(self, guess_id: int, possible_words) -> np.float64:
+        feedbacks = self.guess_feedbacks_array[guess_id, possible_words]
+
+        patterns, num_answers_for_patterns = np.unique(feedbacks, return_counts=True)
+
+        feedback_perc = num_answers_for_patterns / feedbacks.size
+        information = -np.log2(feedback_perc)
+        return feedback_perc.dot(information)
+
+    def score(self, guess_id: int, possible_words) -> np.float64:
+        # ent = self.entropy(guess_id, possible_words)
+        # return ent
+        return self.score4(guess_id, possible_words)
+        # return self.score4(guess_id, possible_words)
+
+
+    def score2(self, guess_id: int, possible_words) -> np.float64:
+        feedbacks = self.guess_feedbacks_array[guess_id, possible_words]
+
+        patterns, num_answers_for_patterns = np.unique(feedbacks, return_counts=True)
+        answers_matching_pattern = self.feedback_inverted_index(feedbacks, num_answers_for_patterns)
+        cum_freqs = [self.word_freqs[possible_words[ind]].sum()
+                     for ind in answers_matching_pattern]
+
+        total_freq = self.word_freqs[possible_words].sum()
+        feedback_probability = np.array(cum_freqs) / total_freq
+        # information = -np.log2(feedback_probability)
+
+        feedback_perc = num_answers_for_patterns / feedbacks.size
+        information = -np.log2(feedback_perc)
+        return feedback_probability.dot(information)
+
+
+    def score3(self, guess_id: int, possible_words) -> np.float64:
+        ent = self.entropy(guess_id, possible_words)
+        p = self.word_freqs[guess_id] / self.word_freqs[possible_words].sum()
+        return p + ent
+
+    def score4(self, guess_id: int, possible_words) -> np.float64:
+        # partitions
+        feedbacks = self.guess_feedbacks_array[guess_id, possible_words]
+        p = self.word_freqs[guess_id] / self.word_freqs[possible_words].sum()
+        return p + np.unique(feedbacks).size
+
+    def partitions(self, guess_id: int, possible_words):
+        # partitions
+        feedbacks = self.guess_feedbacks_array[guess_id, possible_words]
+        return np.unique(feedbacks).size
+
+    def score5(self, guess_id: int, possible_words):
+        feedbacks = self.guess_feedbacks_array[guess_id, possible_words]
+        patterns, pattern_sizes = np.unique(feedbacks, return_counts=True)
+        p = self.word_freqs[guess_id] / self.word_freqs[possible_words].sum()
+
+        return p + patterns.size, np.max(pattern_sizes)
+
+
+    # def partitions_deep(self, guess_id: int, possible_words) -> np.float64:
+    #     feedbacks = self.guess_feedbacks_array[guess_id, possible_words]
+    #     patterns = np.unique(feedbacks)
+    #     for pat in patterns:
+    #         next_possible_words = self.refine_wordset(possible_words, guess_id, pat)
+    #
+
+
 
     def actual_info_from_guess(self, guess: str, feedback: str, possible_words: np.ndarray) -> np.float64:
         # entropy
@@ -106,7 +159,7 @@ class Wordle:
         next_possible_words = possible_words[subset == feedback_id]
         return next_possible_words
 
-    def refine_possible_words(self,possible_words: np.ndarray, guess: str, feedback: str):
+    def refine_possible_words(self, possible_words: np.ndarray, guess: str, feedback: str):
         guess_id = self.word_index[guess]
         pattern_id = self.pattern_index[feedback]
 
@@ -114,6 +167,15 @@ class Wordle:
         subset = self.guess_feedbacks_array[guess_id, possible_words]
         next_possible_words = possible_words[subset == pattern_id]
         return next_possible_words
+
+    def best_guess2(self, possible_words: np.ndarray) -> int:
+        # scores = np.array([self.score(guess_id, possible_words) for guess_id in possible_words],
+        #                   dtype=[('score', np.float64), ('max_bucket_size', int)])
+        parts = np.array([self.partitions(guess_id, possible_words) for guess_id in possible_words])
+        p_is_answer = self.word_freqs[possible_words] / self.word_freqs[possible_words].sum()
+        # i = np.lexsort((parts, p_is_answer))[-1]
+        i = np.argmax(parts + p_is_answer)
+        return possible_words[i]
 
     def best_guess(self, possible_words: np.ndarray) -> int:
         scores = np.array([self.score(guess_id, possible_words) for guess_id in possible_words])
@@ -130,11 +192,12 @@ class Wordle:
 
     def best_guesses(self, possible_words: np.ndarray, k: int = 10):
         # feedbacks = guess_feedbacks_array[:, possible_words]
+        scores = np.array([self.score(guess_id, possible_words) for guess_id in possible_words])
 
-        exp_info = np.array([self.score(guess_id, possible_words) for guess_id in possible_words])
-        candidate_freqs = self.word_freqs[possible_words]
-        p_is_word = candidate_freqs / candidate_freqs.sum()
-        scores = exp_info + p_is_word
+        # exp_info = np.array([self.score(guess_id, possible_words) for guess_id in possible_words])
+        # candidate_freqs = self.word_freqs[possible_words]
+        # p_is_word = candidate_freqs / candidate_freqs.sum()
+        # scores = exp_info + p_is_word
         # scores = p_is_word + (1 - p_is_word) * exp_info
 
         best_ids = scores.argsort()[::-1]
@@ -145,6 +208,70 @@ class Wordle:
             res.append((guess, scores[ind]))
 
         return res
+
+class Game(Wordle):
+    def __init__(self, answer: str, starting_guess: str = 'SLATE'):
+        super().__init__()
+        from wordle.feedback import grade_guess
+        self.grade_guess = functools.partial(grade_guess, answer=answer)
+        self.answer = answer
+        self.possible_words = self.get_possible_words()
+
+
+    def play(self, guess: str):
+        self.possible_words = self.refine_possible_words(self.possible_words,
+                                                         guess,
+                                                         self.grade_guess(guess))
+
+    def score_guess(self, guess: str):
+        guess_id = self.word_index[guess]
+        return self.score(guess_id, self.possible_words)
+
+    def top_guesses(self, score_fn = None, k: int = 10):
+        if score_fn is None:
+            score_fn = self.score
+
+        possible_words = self.possible_words
+        scores = np.array([score_fn(guess_id, possible_words) for guess_id in possible_words])
+
+        # exp_info = np.array([self.score(guess_id, possible_words) for guess_id in possible_words])
+        # candidate_freqs = self.word_freqs[possible_words]
+        # p_is_word = candidate_freqs / candidate_freqs.sum()
+        # scores = exp_info + p_is_word
+        # scores = p_is_word + (1 - p_is_word) * exp_info
+
+        best_ids = scores.argsort()[::-1]
+
+        res = []
+        for ind in best_ids[:k]:
+            guess = self.guesses[possible_words[ind]]
+            res.append((guess, scores[ind]))
+
+        return res
+
+
+# def cmp_scoring():
+#     tg1 = w.top_guesses(score_fn=w.entropy, k=25)
+#     tg2 = w.top_guesses(score_fn=w.score3, k=25)
+#     tg3 = w.top_guesses(score_fn=w.score4, k=25)
+#
+#     for (g1, s1), (g2, s2), (g3, s3) in zip(tg1, tg2, tg3):
+#         out = f'{g1} {s1:.2f} {g2} {s2:.2f} {g3} {s3:.2f}'
+#         print(out)
+#     print()
+#
+# w = Game('BAKER')
+# w.play('SLATE')
+# cmp_scoring()
+# w.play('RACED')
+# cmp_scoring()
+
+    #
+# w = Game('ABASE')
+# w.play('SLATE')
+# # w.score_guess('UKASE')
+# w.score_guess('PHASE')
+# w.score_guess('ABASE')
 
 # class Feedback:
 #     def __init__(self, guess: str, pattern: Pattern):
@@ -346,4 +473,3 @@ class Wordle:
 # TODO add pytest and some cases
 # TODO decide on scoring / evaluation
 # TODO should probably delineate between pattern and feedback (word, pattern)
-
