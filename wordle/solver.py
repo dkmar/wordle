@@ -57,7 +57,6 @@ def get_word_frequencies(word_index: Mapping[str, int]) -> np.ndarray:
         return np.array(freqs)
 
 
-
 class Wordle:
     guesses = GUESSES
     answers = ANSWERS
@@ -75,7 +74,6 @@ class Wordle:
         self.guess_feedbacks_array = get_guess_feedbacks_array(self.guesses, RELEVANT_WORDS, self.pattern_index)
         # self.word_freqs = get_word_frequencies(self.word_index)
         # self.relative_word_freqs = self.word_freqs / self.word_freqs.sum()
-
 
     def feedback_inverted_index(self, feedbacks, feedback_counts):
         # feedbacks = self.guess_feedbacks_array[guess_id]
@@ -102,7 +100,6 @@ class Wordle:
         # return self.score3(guess_id, possible_answers)
         # return self.score4(guess_id, possible_words)
 
-
     def score2(self, guess_id: int, possible_words) -> np.float64:
         feedbacks = self.guess_feedbacks_array[guess_id, possible_words]
 
@@ -118,7 +115,6 @@ class Wordle:
         feedback_perc = num_answers_for_patterns / feedbacks.size
         information = -np.log2(feedback_perc)
         return feedback_probability.dot(information)
-
 
     def score3(self, guess_id: int, possible_words) -> np.float64:
         ent = self.entropy(guess_id, possible_words)
@@ -149,15 +145,12 @@ class Wordle:
 
         return p + patterns.size, np.max(pattern_sizes)
 
-
     # def partitions_deep(self, guess_id: int, possible_words) -> np.float64:
     #     feedbacks = self.guess_feedbacks_array[guess_id, possible_words]
     #     patterns = np.unique(feedbacks)
     #     for pat in patterns:
     #         next_possible_words = self.refine_wordset(possible_words, guess_id, pat)
     #
-
-
 
     def actual_info_from_guess(self, guess: str, feedback: str, possible_words: np.ndarray) -> np.float64:
         # entropy
@@ -230,6 +223,7 @@ class Wordle:
 
         return res
 
+
 class Game(Wordle):
     def __init__(self, answer: str, hard_mode: bool = True):
         super().__init__()
@@ -243,7 +237,6 @@ class Game(Wordle):
         self.possible_answers = np.arange(len(self.answers))
         self.hard_mode = hard_mode
         self.history = []
-
 
     def play(self, guess: str, feedback: None | str = None) -> str:
         pg, pa = self.possible_guesses, self.possible_answers
@@ -266,7 +259,7 @@ class Game(Wordle):
         parts, max_part = self.partitions_and_max(guess_id, self.possible_answers)
         return ent, parts, max_part
 
-    def top_guesses(self, score_fn = None, k: int = 10):
+    def top_guesses(self, score_fn=None, k: int = 10):
         if score_fn is None:
             score_fn = self.score
 
@@ -291,7 +284,8 @@ class Game(Wordle):
         res = []
         for ind in best_ids[:k]:
             guess = self.guesses[pg[ind]]
-            res.append((guess, ents[ind], parts[ind], max_part_size[ind], self.scaled_word_freqs[ind], can_be_answer[ind]))
+            res.append(
+                (guess, ents[ind], parts[ind], max_part_size[ind], self.scaled_word_freqs[ind], can_be_answer[ind]))
 
         return res
 
@@ -300,6 +294,20 @@ class Game(Wordle):
     #         return 'PAGLE'
     #     else:
     #         return self.best_guess()
+    def lex_max(self, *keys):
+        ind = None
+        for key in keys:
+            if ind is not None:
+                key = key[ind]
+
+            best = np.where(key == key.max())[0]
+            ind = best if ind is None else ind[best]
+            if ind.size == 1:
+                break
+
+        return ind[0]
+
+
 
     def best_guess(self) -> str:
         pg, pa = self.possible_guesses, self.possible_answers
@@ -310,10 +318,10 @@ class Game(Wordle):
         # ent, i = max((self.entropy(guess_id, pa), guess_id) for guess_id in pg)
         # ents = np.array([self.entropy(guess_id, pa)
         #                 for guess_id in pg])
-        # parts, max_part_size = np.array([self.partitions_and_max(guess_id, pa)
-        #                                  for guess_id in pg]).T
-        parts = np.array([self.partitions(guess_id, pa)
-                          for guess_id in pg]).T
+        parts, max_part_size = np.array([self.partitions_and_max(guess_id, pa)
+                                         for guess_id in pg]).T
+        # parts = np.array([self.partitions(guess_id, pa)
+        #                   for guess_id in pg]).T
         # word_freqs = self.word_freqs[self.possible_guesses]
         # p_is_answer = word_freqs / word_freqs.sum()
         # i = np.lexsort((parts, p_is_answer))[-1]
@@ -321,12 +329,15 @@ class Game(Wordle):
         # i = np.lexsort((parts, can_be_answer))[-1]
         # i = np.argmax(parts + p_is_answer)
         # i = np.argmax(ent + p_is_answer)
-        # i = np.argmax(parts + can_be_answer * 0.5 - max_part_size / max_part_size.max())
-        i = np.argmax(parts + can_be_answer * 0.5)
+        # keys = np.fromiter(zip(parts, can_be_answer, -max_part_size),
+        #                    dtype='i,b,i')
+        # i = np.argmax(keys)
+        i = self.lex_max(parts, can_be_answer, -max_part_size)
+        # i = np.argmax(parts + can_be_answer * 0.5 - max_part_size / max_part_size.max() * 0.5)
+        # i = np.argmax(parts + can_be_answer * 0.5)
         # i = np.argmax(ent)
         # return self.guesses[pg[i]]
         return self.guesses[pg[i]]
-
 
 # def cmp_scoring():
 #     tg1 = w.top_guesses(score_fn=w.entropy, k=25)
@@ -344,7 +355,7 @@ class Game(Wordle):
 # w.play('RACED')
 # cmp_scoring()
 
-    #
+#
 # w = Game('ABASE')
 # w.play('SLATE')
 # # w.score_guess('UKASE')
