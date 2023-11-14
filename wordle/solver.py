@@ -236,7 +236,10 @@ class Game(Wordle):
         from wordle.feedback import grade_guess
         self.grade_guess = functools.partial(grade_guess, answer=answer)
         self.answer = answer
-        self.possible_guesses = np.arange(len(self.guesses))
+        self.possible_guesses = np.arange(
+            len(self.guesses) if not hard_mode
+            else len(RELEVANT_WORDS)
+        )
         self.possible_answers = np.arange(len(self.answers))
         self.hard_mode = hard_mode
         self.history = []
@@ -250,8 +253,8 @@ class Game(Wordle):
         self.possible_answers = self.refine_possible_words(pa, guess, feedback)
 
         if self.hard_mode:
-            # self.possible_guesses = self.refine_possible_words(pg, guess, feedback)
-            self.possible_guesses = self.possible_answers
+            self.possible_guesses = self.refine_possible_words(pg, guess, feedback)
+            # self.possible_guesses = self.possible_answers
 
         self.history.append(guess)
 
