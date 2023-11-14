@@ -2,7 +2,7 @@ import click
 import itertools
 # import wordle.evaluation as evaluation
 from wordle.lib import Pattern
-from wordle.solver import Wordle
+from wordle.solver import Wordle, Game
 # if __name__ == '__main__':
 #     import wordle.evaluation as evaluation
 #     from wordle.evaluation import GUESSES, guess_index, get_possible_words, best_guess, guess_feedbacks_array, refine_wordset
@@ -16,58 +16,75 @@ def cli():
 
 
 @cli.command()
-def play():
+@click.argument("answer", type=str, required=False)
+@click.option("-h", "hard_mode", is_flag=True)
+def play(answer: str | None, hard_mode: bool):
     "Play a game interactively."
-    import wordle.evaluation as evaluation
-    # solver = Solver(relevant_words)
-    possible_words = evaluation.get_possible_words()
+    game = Game(answer, hard_mode=hard_mode)
 
     for round_number in itertools.count(1):
+        remaining = len(game.possible_answers)
         click.echo(f'Round {round_number}')
-        click.echo(f'# possible answers: {len(possible_words)}')
-        for guess, score in evaluation.best_guesses(possible_words):
-            click.echo(f'\t{guess}: {score}')
+        click.echo(f'# possible answers: {remaining}')
+
+        for guess, entropy, parts, max_part_size, freq, is_possible in game.top_guesses():
+            possible_symbol = '✅' if is_possible else '❌'
+            click.echo(f'\t{guess}: {entropy:.2f} {parts} {max_part_size} {freq:>10.2f} {possible_symbol}')
 
         click.echo()
         guess = click.prompt('Guess').upper()
-        feedback = click.prompt('Feedback').upper()
+        if answer is None:
+            feedback = click.prompt('Feedback').upper()
 
-        # fb = solver.play(guess, feedback.upper())
-        fb = Pattern.from_str(feedback)
-        actual_entropy = evaluation.actual_info_from_guess(guess, fb, possible_words)
-        click.echo(guess)
-        click.echo(f'{fb} {actual_entropy} Bits')
+            # fb = solver.play(guess, feedback.upper())
+            fb = Pattern.from_str(feedback)
+            click.echo(guess)
+            click.echo(fb)
+            game.play(guess, fb)
+        else:
+            fb = game.play(guess)
+            click.echo(guess)
+            click.echo(fb)
 
-        possible_words = evaluation.refine_possible_words(possible_words, guess, fb)
+        if fb == '🟩🟩🟩🟩🟩':
+            break
+        # actual_entropy = evaluation.actual_info_from_guess(guess, fb, possible_words)
+        # click.echo(f'{fb} {actual_entropy} Bits')
+
+
 
 @cli.command()
 @click.argument("n", type=int, required=False)
 @click.option("-w", "--w", "starting_word", default='SLATE', help='Set a starting word.')
 @click.option("-v", "verbose", is_flag=True)
-def bench(n: int | None, starting_word: str, verbose:  bool):
-    w = Wordle()
-    with open('wordle/data/wordle-nyt-answers-alphabetical.txt', 'r') as f:
+@click.option("-h", "hard_mode", is_flag=True)
+def bench(n: int | None, starting_word: str, verbose:  bool, hard_mode: bool):
+    with open('wordle/data/wordlist_nyt20230701_hidden', 'r') as f:
         words = map(str.strip, f)
         REAL_ANSWER_SET = tuple(map(str.upper, words))
 
-    def solve(answer_id: int):
+    starting_word = starting_word.upper()
+    count_failed = 0
+
+    def solve(answer: str):
+        game = Game(answer, hard_mode=hard_mode)
         # if verbose:
         #     print('\n', GUESSES[answer_id])
-        possible_words = w.get_possible_words()
-        guess_id = w.word_index[starting_word]
+
         if verbose:
-            print('\n  ', w.guesses[guess_id])
-        feedback_id = w.guess_feedbacks_array[guess_id, answer_id]
+            print('\n  ', starting_word)
+        feedback = game.play(starting_word)
 
         rounds = 1
-        while Pattern.ALL_PATTERNS[feedback_id] != '🟩🟩🟩🟩🟩':
-            possible_words = w.refine_wordset(possible_words, guess_id, feedback_id)
-
+        while feedback != '🟩🟩🟩🟩🟩' and rounds < 10:
             rounds += 1
-            guess_id = w.best_guess(possible_words)
+            guess = game.best_guess()
             if verbose:
-                print('  ', w.guesses[guess_id])
-            feedback_id = w.guess_feedbacks_array[guess_id, answer_id]
+                print('  ', guess)
+            feedback = game.play(guess)
+
+        if rounds > 6:
+            print('\n', answer, rounds, game.history, '\n')
 
         return rounds
 
@@ -75,19 +92,29 @@ def bench(n: int | None, starting_word: str, verbose:  bool):
     N = len(answers)
     total_rounds_needed = 0
 
-    answers_ids = (w.word_index[answer] for answer in answers)
-    rounds_needed = map(solve, answers_ids)
+    rounds_needed = map(solve, answers)
     items = zip(range(1, N+1), answers, rounds_needed)
-    print_info = lambda item: f'[{item[0]}] {item[1]} {item[2]} {total_rounds_needed/item[0]}' if item else None
+    print_info = lambda item: f'[{item[0]}] {item[1]} {item[2]} {total_rounds_needed/item[0]:.2f}' if item else None
 
     with click.progressbar(items,
                            length=N,
                            item_show_func=print_info) as solution_info:
         for i, ans, rnds in solution_info:
             total_rounds_needed += rnds
+            if rnds > 6:
+                count_failed += 1
 
     avg = total_rounds_needed / N
     click.echo(f'Average: {avg}')
+    click.echo(f'Failed: {count_failed}')
+
+@cli.command()
+@click.argument("n", type=int, required=False)
+@click.option("-w", "--w", "starting_word", default='SLATE', help='Set a starting word.')
+@click.option("-v", "verbose", is_flag=True)
+def explore(n: int | None, starting_word: str, verbose:  bool):
+    # answer guesses...
+    pass
 
 @cli.command(name="command")
 @click.argument(
