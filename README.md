@@ -28,7 +28,7 @@ You can also use:
 To contribute to this tool, first checkout the code. Then create a new virtual environment:
 
     cd wordle
-    python -m venv venv
+    python3 -m venv venv
     source venv/bin/activate
 
 Now install the dependencies and test dependencies:
