@@ -59,50 +59,46 @@ def play(answer: str | None, hard_mode: bool):
 @click.option("-v", "verbose", is_flag=True)
 @click.option("-h", "hard_mode", is_flag=True)
 def bench(n: int | None, starting_word: str, verbose:  bool, hard_mode: bool):
+    starting_word = starting_word.upper()
     with open('wordle/data/wordlist_nyt20230701_hidden', 'r') as f:
         words = map(str.strip, f)
         REAL_ANSWER_SET = tuple(map(str.upper, words))
 
-    starting_word = starting_word.upper()
-    count_failed = 0
-
-    def solve(answer: str):
+    def solve(answer: str) -> list[str]:
         game = Game(answer, hard_mode=hard_mode)
-        # if verbose:
-        #     print('\n', GUESSES[answer_id])
-
-        if verbose:
-            print('\n  ', starting_word)
         feedback = game.play(starting_word)
 
         rounds = 1
         while feedback != '🟩🟩🟩🟩🟩' and rounds < 10:
             rounds += 1
             guess = game.best_guess()
-            if verbose:
-                print('  ', guess)
             feedback = game.play(guess)
 
-        if rounds > 6:
-            print('\n', answer, rounds, game.history, '\n')
-
-        return rounds
+        return game.history
 
     answers = REAL_ANSWER_SET[:n] if n else REAL_ANSWER_SET
     N = len(answers)
     total_rounds_needed = 0
+    count_failed = 0
 
-    rounds_needed = map(solve, answers)
-    items = zip(range(1, N+1), answers, rounds_needed)
-    print_info = lambda item: f'[{item[0]}] {item[1]} {item[2]} {total_rounds_needed/item[0]:.2f}' if item else None
+    game_results = map(solve, answers)
+    items = zip(range(1, N+1), answers, game_results)
+    print_info = lambda item: f'[{item[0]}] {item[1]} {len(item[2])} {total_rounds_needed/item[0]:.2f}' if item else None
 
     with click.progressbar(items,
                            length=N,
                            item_show_func=print_info) as solution_info:
-        for i, ans, rnds in solution_info:
+        for i, ans, result in solution_info:
+            rnds = len(result)
             total_rounds_needed += rnds
             if rnds > 6:
                 count_failed += 1
+                print('\n', result, '\n')
+            elif verbose:
+                print()
+                for guess in result:
+                    print('  ', guess)
+
 
     avg = total_rounds_needed / N
     click.echo(f'Average: {avg}')
