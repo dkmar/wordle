@@ -1,6 +1,6 @@
 import heapq
 
-from wordle.solver import Evaluation, relevant_words
+from wordle.evaluation import *
 # from concurrent.futures import ProcessPoolExecutor, as_completed
 import itertools, timeit, os, math, functools
 import multiprocessing
@@ -17,25 +17,7 @@ from tqdm import tqdm
 #
 # t = timeit.Timer(work)
 # print(t.timeit(4))
-def get_score(word: str):
-    score = Evaluation.score(relevant_words, word)
-    return (score, word)
 
-if __name__ == '__main__':
-    # relevant_words = relevant_words[:500]
-
-    evals = []
-    with tqdm(total=len(relevant_words)) as progress:
-        chunksize = math.ceil(len(relevant_words) / 4)
-        with multiprocessing.Pool(4) as pool:
-            for item in pool.imap_unordered(get_score, relevant_words, chunksize=chunksize):
-                evals.append(item)
-                progress.update(1)
-
-    top = heapq.nlargest(30, evals)
-    # top = Evaluation.topk(relevant_words, k=15)
-    for score, word in top:
-        print(word, score)
 
 
 # for _ in range(4):
@@ -47,4 +29,29 @@ if __name__ == '__main__':
 #     for _ in range(4):
 #         pool.submit(work)
 
-# def bench():
+with open('wordle/data/wordle-nyt-answers-alphabetical.txt', 'r') as f:
+    words = map(str.strip, f)
+    REAL_ANSWER_SET = tuple(map(str.upper, words))
+
+def solve(answer_id: int):
+    possible_words = get_possible_words()
+    rounds = 0
+    while possible_words.size > 1:
+        guess_id = best_guess(possible_words)
+        feedback_id = guess_feedbacks_array[guess_id, answer_id]
+        possible_words = refine_wordset(possible_words, guess_id, feedback_id)
+        rounds += 1
+
+    return rounds
+
+# def solve_all():
+#     answers_ids = (guess_index[answer] for answer in REAL_ANSWER_SET)
+#     results = tqdm(map(solve, answers_ids))
+#     return np.fromiter(results, int).mean()
+#
+# if __name__ == '__main__':
+#     # answer_id = guess_index['FLARE']
+#     # rnds = solve(answer_id)
+#     # print(rnds)
+#     res = solve_all()
+#     print(res)

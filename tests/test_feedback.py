@@ -1,5 +1,7 @@
 import pytest
 from wordle.solver import Game, Pattern, Feedback
+from wordle.lib import Pattern2
+from wordle.feedback import grade_guess
 
 # test data from https://github.com/yukosgiti/wordle-tests
 PATTERN_TEST_DATA = 'tests/testdata/tests.txt'
@@ -11,6 +13,13 @@ def read_test_data(file_path: str):
             line = line.strip()
             answer, guess, feedback = line.split(',')
             yield answer, guess, feedback
+
+
+translation_table = str.maketrans({
+    '⬛': 'w',
+    '🟨': 'm',
+    '🟩': 'c'
+})
 
 
 @pytest.mark.parametrize('answer,guess,feedback', read_test_data(PATTERN_TEST_DATA))
@@ -28,14 +37,10 @@ def test_feedback_matching(answer, guess, feedback):
         w == wrong == black/grey
         m == misplaced == yellow
     """
-    pat = Pattern.from_str(feedback)
-    
-    fb1 = Game(answer).grade_guess(guess)
-    assert fb1.pattern == pat, f'Failed for test1 ({answer}, {guess}, {feedback})'
+    pat = Pattern2.from_str(feedback)
 
-    fb2 = Feedback(guess, pat)
-    assert fb2.matchesWord(answer), f'Failed for test2 ({answer}, {guess}, {feedback})'
-
+    fb = grade_guess(guess, answer)
+    assert fb == pat, f'Failed for test ({answer}, {guess}, {feedback})'
 
 def test_patterns_manual():
     """
@@ -49,6 +54,7 @@ def test_patterns_manual():
     assert fb.pattern == Pattern.from_str('_YY__')
     fb = Game('OTHER').grade_guess('POOCH')
     assert fb.pattern == Pattern.from_str('_Y__Y')
+
 
 def test_matches_word_small():
     """
@@ -65,4 +71,3 @@ def test_matches_word_small():
     fb = Game('OTHER').grade_guess('POOCH')
     assert fb.matchesWord('OTHER')
     assert not fb.matchesWord('TABOO')
-
