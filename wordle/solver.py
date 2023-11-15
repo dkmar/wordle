@@ -82,9 +82,9 @@ class Wordle:
 
         patterns, num_answers_for_patterns = np.unique(feedbacks, return_counts=True)
 
-        feedback_perc = num_answers_for_patterns / feedbacks.size
-        information = -np.log2(feedback_perc)
-        return feedback_perc.dot(information)
+        answer_dist = num_answers_for_patterns / feedbacks.size
+        information = -np.log2(answer_dist)
+        return answer_dist.dot(information)
 
     def score(self, guess_id: int, possible_answers) -> np.float64:
         ent = self.entropy(guess_id, possible_answers)
@@ -258,10 +258,7 @@ class Game(Wordle):
         parts, max_part = self.partitions_and_max(guess_id, self.possible_answers)
         return ent, parts, max_part
 
-    def top_guesses(self, score_fn=None, k: int = 10):
-        if score_fn is None:
-            score_fn = self.score
-
+    def top_guesses(self, k: int = 10):
         pg, pa = self.possible_guesses, self.possible_answers
 
         if pa.size == 1:
@@ -323,6 +320,8 @@ class Game(Wordle):
         # i = np.argmax(ent)
         # return self.guesses[pg[i]]
         return self.guesses[pg[i]]
+
+
 
 # def cmp_scoring():
 #     tg1 = w.top_guesses(score_fn=w.entropy, k=25)
