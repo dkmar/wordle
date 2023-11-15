@@ -35,16 +35,15 @@ def play(answer: str | None, hard_mode: bool):
         guess = click.prompt('Guess').upper()
         if answer is None:
             feedback = click.prompt('Feedback').upper()
-
-            # fb = solver.play(guess, feedback.upper())
             fb = Pattern.from_str(feedback)
+            game.play(guess, fb)
             click.echo(guess)
             click.echo(fb)
-            game.play(guess, fb)
         else:
             fb = game.play(guess)
             click.echo(guess)
             click.echo(fb)
+        print()
 
         if fb == '🟩🟩🟩🟩🟩':
             break
