@@ -126,9 +126,16 @@ class Wordle:
 
     def partitions_and_max(self, guess_id: int, possible_answers):
         # partitions
+        # feedbacks = self.guess_feedbacks_array[guess_id, possible_answers]
+        # pats, pat_freqs = np.unique(feedbacks, return_counts=True)
+        # return pats.size, np.max(pat_freqs)
         feedbacks = self.guess_feedbacks_array[guess_id, possible_answers]
-        pats, pat_freqs = np.unique(feedbacks, return_counts=True)
-        return pats.size, np.max(pat_freqs)
+        bincounts = np.bincount(feedbacks)
+        parts = bincounts[bincounts > 0]
+
+        return parts.size, parts.max()
+
+
 
     def score5(self, guess_id: int, possible_words):
         feedbacks = self.guess_feedbacks_array[guess_id, possible_words]
