@@ -5,6 +5,8 @@ from wordle.feedback import get_guess_feedbacks_array
 from wordle.lib import Pattern
 import numpy as np
 
+from wordle.utils import feedback_inverted_index, lexmax
+
 ''' Gameplay (Hard Mode)
 1. Initial state has the target word.
 2. We play up to six rounds wherein we can make a guess and get feedback.
@@ -75,16 +77,6 @@ class Wordle:
         # self.word_freqs = get_word_frequencies(self.word_index)
         # self.relative_word_freqs = self.word_freqs / self.word_freqs.sum()
 
-    def feedback_inverted_index(self, feedbacks, feedback_counts):
-        # feedbacks = self.guess_feedbacks_array[guess_id]
-
-        # inverted index. pattern to words
-        indices = np.argsort(feedbacks)
-        # feedback_freqs = np.bincount(feedbacks)
-        answers_matching_pattern = np.split(indices, np.cumsum(feedback_counts)[:-1])
-
-        return answers_matching_pattern
-
     def entropy(self, guess_id: int, possible_answers) -> np.float64:
         feedbacks = self.guess_feedbacks_array[guess_id, possible_answers]
 
@@ -104,7 +96,7 @@ class Wordle:
         feedbacks = self.guess_feedbacks_array[guess_id, possible_words]
 
         patterns, num_answers_for_patterns = np.unique(feedbacks, return_counts=True)
-        answers_matching_pattern = self.feedback_inverted_index(feedbacks, num_answers_for_patterns)
+        answers_matching_pattern = feedback_inverted_index(feedbacks, num_answers_for_patterns)
         cum_freqs = [self.word_freqs[possible_words[ind]].sum()
                      for ind in answers_matching_pattern]
 
@@ -294,20 +286,6 @@ class Game(Wordle):
     #         return 'PAGLE'
     #     else:
     #         return self.best_guess()
-    def lex_max(self, *keys):
-        ind = None
-        for key in keys:
-            if ind is not None:
-                key = key[ind]
-
-            best = np.where(key == key.max())[0]
-            ind = best if ind is None else ind[best]
-            if ind.size == 1:
-                break
-
-        return ind[0]
-
-
 
     def best_guess(self) -> str:
         pg, pa = self.possible_guesses, self.possible_answers
@@ -332,7 +310,7 @@ class Game(Wordle):
         # keys = np.fromiter(zip(parts, can_be_answer, -max_part_size),
         #                    dtype='i,b,i')
         # i = np.argmax(keys)
-        i = self.lex_max(parts, can_be_answer, -max_part_size)
+        i = lexmax(parts, can_be_answer, -max_part_size)
         # i = np.argmax(parts + can_be_answer * 0.5 - max_part_size / max_part_size.max() * 0.5)
         # i = np.argmax(parts + can_be_answer * 0.5)
         # i = np.argmax(ent)
