@@ -4,6 +4,7 @@ from typing import Mapping
 from wordle.feedback import get_guess_feedbacks_array
 from wordle.lib import Pattern
 import numpy as np
+from numpy.lib import recfunctions as rfn
 
 from wordle.utils import feedback_inverted_index, lexmax
 from wordle.solutiontree import SolutionTree
@@ -59,6 +60,12 @@ def get_word_frequencies(word_index: Mapping[str, int]) -> np.ndarray:
 
         return np.array(freqs)
 
+def get_pillars_of_doom(word_index: Mapping[str, int]) -> np.ndarray:
+    with open('wordle/data/pillars_of_doom.txt', 'r') as f:
+        lines = map(str.strip, f)
+        words = map(str.upper, lines)
+        return np.array([word_index[word]
+                         for word in words if word in word_index])
 
 class Wordle:
     guesses = GUESSES
@@ -75,8 +82,10 @@ class Wordle:
     scaled_word_freqs = word_freqs / word_freqs[:len(answers)].min()
     relative_word_freqs = word_freqs / word_freqs.sum()
 
+    pillars_of_doom = get_pillars_of_doom(word_index)
+
     def __init__(self):
-        self.guess_feedbacks_array = get_guess_feedbacks_array(self.guesses, RELEVANT_WORDS, self.pattern_index)
+        self.guess_feedbacks_array = get_guess_feedbacks_array(self.guesses, self.guesses, self.pattern_index)
         # self.word_freqs = get_word_frequencies(self.word_index)
         # self.relative_word_freqs = self.word_freqs / self.word_freqs.sum()
 
@@ -126,6 +135,12 @@ class Wordle:
         # partitions
         feedbacks = self.guess_feedbacks_array[guess_id, possible_answers]
         return np.unique(feedbacks).size
+
+    def partitions_fast(self, guess_id: int, possible_answers):
+        # partitions
+        feedbacks = self.guess_feedbacks_array[guess_id, possible_answers]
+        bins = np.bincount(feedbacks, minlength=len(self.patterns))
+        return np.count_nonzero(bins)
 
     def partitions_and_max(self, guess_id: int, possible_answers):
         # partitions
@@ -227,19 +242,30 @@ class Wordle:
 
 
 class Game(Wordle):
-    def __init__(self, answer: str, hard_mode: bool = True):
+    def __init__(self, answer: str = '', hard_mode: bool = True):
         super().__init__()
         from wordle.feedback import grade_guess
         self.grade_guess = functools.partial(grade_guess, answer=answer)
         self.answer = answer
-        self.possible_guesses = np.arange(
-            len(self.guesses) if not hard_mode
-            else len(RELEVANT_WORDS)
-        )
+        self.possible_guesses = np.arange(len(self.guesses))
         self.possible_answers = np.arange(len(self.answers))
         self.hard_mode = hard_mode
-        self.history = []
         self.history = {}
+        # self.ends_with_penalty = np.array([3*guess.endswith('ED') + 2*guess.endswith('ER') + (guess[-1] == 'D')
+        #                                    for guess in self.guesses])
+
+        # self.endswith_er = set(guess for guess in self.guesses if guess.endswith('ER'))
+        # self.endswith_d = set(guess for guess in self.guesses if guess.endswith('D'))
+        # overlap_penalty = []
+        # for guess in self.guesses:
+        #     overlap = 0
+        #     for word_idx in self.pillars_of_doom:
+        #         word = self.guesses[word_idx]
+        #         overlap += sum(i * (g == w) for i, (g,w) in enumerate(zip(guess, word)))
+        #
+        #     overlap_penalty.append(overlap)
+        #
+        # self.overlap_penalty = np.array(overlap_penalty)
 
     def play(self, guess: str, feedback: None | str = None) -> str:
         pg, pa = self.possible_guesses, self.possible_answers
@@ -255,6 +281,7 @@ class Game(Wordle):
         self.history[guess] = feedback
 
         return feedback
+
     def with_guesses(self, *guesses: str):
         assert self.answer != ''
 
@@ -263,23 +290,35 @@ class Game(Wordle):
 
         return self
 
+    def get_bucket_count(self, guess: str, pattern: str):
+        pid = self.pattern_index[pattern]
+        gid = self.word_index[guess]
+        feedbacks = self.guess_feedbacks_array[gid, self.possible_answers]
+        return np.count_nonzero(feedbacks == pid)
+
     def score_guess(self, guess: str):
         guess_id = self.word_index[guess]
         ent = self.entropy(guess_id, self.possible_answers)
         parts, max_part = self.partitions_and_max(guess_id, self.possible_answers)
         return ent, parts, max_part
 
+    def get_possible_pillars(self):
+        return np.intersect1d(self.possible_guesses, self.pillars_of_doom)
+
     def top_guesses(self, k: int = 10):
         pg, pa = self.possible_guesses, self.possible_answers
 
         if pa.size == 1:
             guess = self.guesses[pa[0]]
-            return [(guess, 0.0, 1, 1, self.scaled_word_freqs[pa[0]], True)]
+            return [(guess, 0.0, 1, 1, -1, self.scaled_word_freqs[pa[0]], True)]
 
         ents = np.array([self.entropy(guess_id, pa) for guess_id in pg])
         parts_maxpart = [self.partitions_and_max(guess_id, pa) for guess_id in pg]
         parts, max_part_size = np.array(parts_maxpart).T
         can_be_answer = np.isin(pg, pa, assume_unique=True)
+
+        possible_pillars = self.get_possible_pillars()
+        pillar_parts = np.array([self.partitions(guess_id, possible_pillars) for guess_id in pg])
 
         # exp_info = np.array([self.score(guess_id, possible_words) for guess_id in possible_words])
         candidate_freqs = self.relative_word_freqs[pg]
@@ -287,12 +326,17 @@ class Game(Wordle):
         # scores = exp_info + p_is_word
         # scores = p_is_word + (1 - p_is_word) * exp_info
         # best_ids = np.argsort(parts + can_be_answer * 0.1)[::-1]
-        best_ids = np.lexsort((candidate_freqs, can_be_answer, parts))[::-1]
+        # pen = np.array([len(self.endswith_er) * (guess in self.endswith_er) + len(self.endswith_d) * (guess in self.endswith_d)
+        #        for guess in map(self.guesses.__getitem__, pg)])
+
+        best_ids = np.lexsort((candidate_freqs, can_be_answer, parts + pillar_parts))[::-1]
         res = []
         for ind in best_ids[:k]:
             guess = self.guesses[pg[ind]]
             res.append(
-                (guess, ents[ind], parts[ind], max_part_size[ind], self.scaled_word_freqs[ind], can_be_answer[ind]))
+                (guess, ents[ind], parts[ind], max_part_size[ind],
+                 pillar_parts[ind],
+                 self.scaled_word_freqs[pg[ind]], can_be_answer[ind]))
 
         return res
 
@@ -301,6 +345,11 @@ class Game(Wordle):
     #         return 'PAGLE'
     #     else:
     #         return self.best_guess()
+    def partitions_and_x(self, guess_id, possible_answers):
+        feedbacks = self.guess_feedbacks_array[guess_id, possible_answers]
+        patterns, pattern_freqs = np.unique(feedbacks, return_counts=True)
+        return patterns.size, np.mean(pattern_freqs)
+
 
     def best_guess(self) -> str:
         pg, pa = self.possible_guesses, self.possible_answers
@@ -321,11 +370,27 @@ class Game(Wordle):
         can_be_answer = np.isin(pg, pa, assume_unique=True)
         # i = np.lexsort((parts, can_be_answer))[-1]
         # i = np.argmax(parts + p_is_answer)
+        candidate_freqs = self.relative_word_freqs[pg]
         # i = np.argmax(ent + p_is_answer)
+
+        if not self.hard_mode or (possible_pillars := self.get_possible_pillars()).size == 0:
+            i = lexmax(parts, can_be_answer, -max_part_size, candidate_freqs)
+            return self.guesses[pg[i]]
+
+
+        # pillar_parts = np.array([self.partitions(guess_id, possible_pillars) for guess_id in pg])
+        pillar_parts, ppart_size_x = np.array([self.partitions_and_x(guess_id, possible_pillars)
+                                               for guess_id in pg]).T
+
+
         # keys = np.fromiter(zip(parts, can_be_answer, -max_part_size),
         #                    dtype='i,b,i')
         # i = np.argmax(keys)
-        i = lexmax(parts, can_be_answer, -max_part_size)
+        # if possible_pillars.size / pa.size > 0.25:
+        #     i = lexmax(~is_bait, parts + pillar_parts, can_be_answer, -max_part_size, candidate_freqs)
+        # else:
+        i = lexmax(parts + pillar_parts - ppart_size_x + can_be_answer, -max_part_size, candidate_freqs)
+
         # i = np.argmax(parts + can_be_answer * 0.5 - max_part_size / max_part_size.max() * 0.5)
         # i = np.argmax(parts + can_be_answer * 0.5)
         # i = np.argmax(ent)
@@ -375,6 +440,62 @@ class Game(Wordle):
         i = np.argmax(parts)
         return pg[i]
 
+    def best_guess_ids(self, pg, pa, k=20) -> list[int]:
+        if pa.size == 1:
+            return [pa[0]]
+
+        if pg.size <= k:
+            return pg
+
+        # ent, i = max((self.entropy(guess_id, pa), guess_id) for guess_id in pg)
+        # ents = np.array([self.entropy(guess_id, pa)
+        #                 for guess_id in pg])
+        # parts, max_part_size = np.array([self.partitions_and_max(guess_id, pa)
+        #                                  for guess_id in pg]).T
+        parts = np.array([self.partitions_fast(guess_id, pa)
+                          for guess_id in pg])
+        # word_freqs = self.word_freqs[self.possible_guesses]
+        # p_is_answer = word_freqs / word_freqs.sum()
+        # i = np.lexsort((parts, p_is_answer))[-1]
+        # can_be_answer = np.isin(pg, pa, assume_unique=True)
+        # i = np.lexsort((parts, can_be_answer))[-1]
+        # i = np.argmax(parts + p_is_answer)
+        # candidate_freqs = self.relative_word_freqs[pg]
+        # i = np.argmax(ent + p_is_answer)
+
+        # if not self.hard_mode or (possible_pillars := self.get_possible_pillars()).size == 0:
+        #     i = lexmax(parts, can_be_answer, -max_part_size, candidate_freqs)
+        #     return pg[i]
+        can_be_answer = np.isin(pg, pa, assume_unique=True)
+        possible_pillars = np.intersect1d(pa, self.pillars_of_doom)
+        # if possible_pillars.size == 0:
+        #     inds = np.argpartition((parts + pillar_parts), -k)[-k:]
+        #     return pg[inds]
+        # pillar_parts, ppart_size_x = np.array([self.partitions_and_x(guess_id, possible_pillars)
+        #                                        for guess_id in pg]).T
+        pillar_parts = np.array([self.partitions_fast(guess_id, possible_pillars) for guess_id in pg])
+        # keys = np.column_stack((parts + pillar_parts - ppart_size_x, can_be_answer, candidate_freqs))
+        # keys = rfn.unstructured_to_structured(keys)
+        # pillar_parts, ppart_size_x = np.array([self.partitions_and_x(guess_id, possible_pillars)
+        #                                        for guess_id in pg]).T
+        is_pillar = np.isin(pg, self.pillars_of_doom, assume_unique=True)
+        pillar_penalty = pillar_parts * is_pillar / 2
+        keys = np.fromiter(zip(parts + pillar_parts - pillar_penalty, can_be_answer),
+                           dtype='f,b')
+        # i = np.argmax(keys)
+        # if possible_pillars.size / pa.size > 0.25:
+        #     i = lexmax(~is_bait, parts + pillar_parts, can_be_answer, -max_part_size, candidate_freqs)
+        # else:
+        # i = lexmax(parts + pillar_parts - ppart_size_x + can_be_answer, -max_part_size, candidate_freqs)
+
+        # i = np.argmax(parts + can_be_answer * 0.5 - max_part_size / max_part_size.max() * 0.5)
+        # i = np.argmax(parts + can_be_answer * 0.5)
+        # i = np.argmax(ent)
+        # return self.guesses[pg[i]]
+        # inds = np.argpartition(parts, -k)[-k:]
+        inds = np.argpartition(keys, -k)[-k:]
+        return pg[inds]
+
     from typing import Iterable
     def with_limited_answers(self, words: Iterable[str]):
         word_ids = (self.word_index[word] for word in words)
@@ -382,12 +503,20 @@ class Game(Wordle):
         return self
 
 
-    def map_solutions(self, starting_word: str = 'SLATE') -> SolutionTree:
-        guess_id = self.word_index[starting_word]
+    def map_solutions(self, starting_word: str = '', find_optimal: bool = False) -> SolutionTree:
         possible_guesses = self.possible_guesses
         possible_answers = self.possible_answers
 
-        return self._map_solutions(possible_guesses, possible_answers, guess_id)
+        if starting_word:
+            guess_id = self.word_index[starting_word]
+            if find_optimal:
+                return self._map_solutions_optimal({}, possible_guesses, possible_answers, guess_id)
+            else:
+                return self._map_solutions(possible_guesses, possible_answers, guess_id)
+        elif find_optimal:
+            return self._map_solutions_optimal({}, possible_guesses, possible_answers)
+        else:
+            return self._map_solutions(possible_guesses, possible_answers)
 
 
     def _map_solutions(self,
@@ -413,6 +542,49 @@ class Game(Wordle):
                 tree[feedback] = self._map_solutions(next_possible_guesses, next_possible_answers)
 
         return tree
+
+    def _map_solutions_optimal(self,
+                               memo: dict,
+                               possible_guesses: np.ndarray[int],
+                               possible_answers: np.ndarray[int],
+                               given_guess_id: int | None = None) -> SolutionTree:
+
+        if possible_answers.size == 1:
+            answer = self.answers[possible_answers[0]]
+            return SolutionTree(answer, True)
+
+        if given_guess_id is not None:
+            key = 0
+        else:
+            entry = memo.get(key := (hash(possible_guesses.data.tobytes()),
+                                     hash(possible_answers.data.tobytes())))
+            if entry is not None:
+                return entry
+
+        best_tree = None
+        best_guess_ids = [given_guess_id] if given_guess_id is not None \
+            else self.best_guess_ids(possible_guesses, possible_answers, 20)
+
+
+        for guess_id in best_guess_ids:
+            tree = SolutionTree(self.guesses[guess_id])
+
+            feedback_ids = np.bincount(self.guess_feedbacks_array[guess_id, possible_answers]).nonzero()[0]
+            # feedback_ids = np.unique(self.guess_feedbacks_array[guess_id, possible_answers])
+            for feedback_id in feedback_ids:
+                feedback = self.patterns[feedback_id]
+                if feedback == '🟩🟩🟩🟩🟩':
+                    tree.is_answer = True
+                else:
+                    next_possible_guesses = self.refine_wordset(possible_guesses, guess_id, feedback_id)
+                    next_possible_answers = self.refine_wordset(possible_answers, guess_id, feedback_id)
+                    tree[feedback] = self._map_solutions_optimal(memo, next_possible_guesses, next_possible_answers)
+
+            if best_tree is None or tree.cmp_key < best_tree.cmp_key:
+                best_tree = tree
+
+        memo[key] = best_tree
+        return best_tree
 
 # def cmp_scoring():
 #     tg1 = w.top_guesses(score_fn=w.entropy, k=25)
@@ -637,3 +809,21 @@ class Game(Wordle):
 # TODO add pytest and some cases
 # TODO decide on scoring / evaluation
 # TODO should probably delineate between pattern and feedback (word, pattern)
+
+game = Game('MATED', hard_mode=True)
+# gid = game.word_index['SLATE']
+# fbs = game.guess_feedbacks_array[gid][game.possible_answers]
+#
+# game.possible_answers = np.where(fbs == 13)[0]
+
+# tree_rated = game.map_solutions('RATED')
+# tree_tread = game.map_solutions('TREAD')
+# tree_trema = game.map_solutions('TREMA')
+# tree_trema_opt = game.map_solutions('TREMA', find_optimal=True)
+tree_opt = game.map_solutions('SLATE', find_optimal=True)
+# print(str(tree_opt))
+# with open('tree_mated_slate.txt', 'w') as f:
+#     f.write(str(tree_opt))
+# for i, tree in enumerate([tree_trema, tree_trema_opt], 1):
+#     with open(f'tree{i}.txt', 'w') as f:
+#         f.write(str(tree))
