@@ -6,6 +6,7 @@ from wordle.lib import Pattern
 import numpy as np
 
 from wordle.utils import feedback_inverted_index, lexmax
+from wordle.solutiontree import SolutionTree
 
 ''' Gameplay (Hard Mode)
 1. Initial state has the target word.
@@ -65,8 +66,10 @@ class Wordle:
     word_index = {guess: i
                   for i, guess in enumerate(guesses)}
 
+    patterns = Pattern.ALL_PATTERNS
     pattern_index = {pattern: i
-                     for i, pattern in enumerate(Pattern.ALL_PATTERNS)}
+                     for i, pattern in enumerate(patterns)}
+
 
     word_freqs = get_word_frequencies(word_index)
     scaled_word_freqs = word_freqs / word_freqs[:len(answers)].min()
@@ -329,12 +332,87 @@ class Game(Wordle):
         # return self.guesses[pg[i]]
         return self.guesses[pg[i]]
 
+    def best_guess_id(self, pg, pa) -> int:
+        if pa.size == 1:
+            return pa[0]
+
+        # ent, i = max((self.entropy(guess_id, pa), guess_id) for guess_id in pg)
+        # ents = np.array([self.entropy(guess_id, pa)
+        #                 for guess_id in pg])
+        # parts, max_part_size = np.array([self.partitions_and_max(guess_id, pa)
+        #                                  for guess_id in pg]).T
+        parts = np.array([self.partitions(guess_id, pa)
+                          for guess_id in pg])
+        # word_freqs = self.word_freqs[self.possible_guesses]
+        # p_is_answer = word_freqs / word_freqs.sum()
+        # i = np.lexsort((parts, p_is_answer))[-1]
+        # can_be_answer = np.isin(pg, pa, assume_unique=True)
+        # i = np.lexsort((parts, can_be_answer))[-1]
+        # i = np.argmax(parts + p_is_answer)
+        # candidate_freqs = self.relative_word_freqs[pg]
+        # i = np.argmax(ent + p_is_answer)
+
+        # if not self.hard_mode or (possible_pillars := self.get_possible_pillars()).size == 0:
+        #     i = lexmax(parts, can_be_answer, -max_part_size, candidate_freqs)
+        #     return pg[i]
+
+
+        # pillar_parts = np.array([self.partitions(guess_id, possible_pillars) for guess_id in pg])
+        # pillar_parts, ppart_size_x = np.array([self.partitions_and_x(guess_id, possible_pillars)
+        #                                        for guess_id in pg]).T
+        # keys = np.fromiter(zip(parts, can_be_answer, -max_part_size),
+        #                    dtype='i,b,i')
+        # i = np.argmax(keys)
+        # if possible_pillars.size / pa.size > 0.25:
+        #     i = lexmax(~is_bait, parts + pillar_parts, can_be_answer, -max_part_size, candidate_freqs)
+        # else:
+        # i = lexmax(parts + pillar_parts - ppart_size_x + can_be_answer, -max_part_size, candidate_freqs)
+
+        # i = np.argmax(parts + can_be_answer * 0.5 - max_part_size / max_part_size.max() * 0.5)
+        # i = np.argmax(parts + can_be_answer * 0.5)
+        # i = np.argmax(ent)
+        # return self.guesses[pg[i]]
+        i = np.argmax(parts)
+        return pg[i]
+
     from typing import Iterable
     def with_limited_answers(self, words: Iterable[str]):
         word_ids = (self.word_index[word] for word in words)
         self.possible_answers = np.array(sorted(word_ids))
         return self
 
+
+    def map_solutions(self, starting_word: str = 'SLATE') -> SolutionTree:
+        guess_id = self.word_index[starting_word]
+        possible_guesses = self.possible_guesses
+        possible_answers = self.possible_answers
+
+        return self._map_solutions(possible_guesses, possible_answers, guess_id)
+
+
+    def _map_solutions(self,
+                       possible_guesses: np.ndarray[int],
+                       possible_answers: np.ndarray[int],
+                       given_guess_id: int | None = None) -> SolutionTree:
+
+        if possible_answers.size == 1:
+            answer = self.answers[possible_answers[0]]
+            return SolutionTree(answer, True)
+
+        guess_id = given_guess_id if (given_guess_id is not None) else self.best_guess_id(possible_guesses, possible_answers)
+        tree = SolutionTree(self.guesses[guess_id])
+
+        feedback_ids = np.unique(self.guess_feedbacks_array[guess_id, possible_answers])
+        for feedback_id in feedback_ids:
+            feedback = self.patterns[feedback_id]
+            if feedback == '🟩🟩🟩🟩🟩':
+                tree.is_answer = True
+            else:
+                next_possible_guesses = self.refine_wordset(possible_guesses, guess_id, feedback_id)
+                next_possible_answers = self.refine_wordset(possible_answers, guess_id, feedback_id)
+                tree[feedback] = self._map_solutions(next_possible_guesses, next_possible_answers)
+
+        return tree
 
 # def cmp_scoring():
 #     tg1 = w.top_guesses(score_fn=w.entropy, k=25)
