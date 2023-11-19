@@ -236,6 +236,7 @@ class Game(Wordle):
         self.possible_answers = np.arange(len(self.answers))
         self.hard_mode = hard_mode
         self.history = []
+        self.history = {}
 
     def play(self, guess: str, feedback: None | str = None) -> str:
         pg, pa = self.possible_guesses, self.possible_answers
@@ -248,7 +249,7 @@ class Game(Wordle):
             self.possible_guesses = self.refine_possible_words(pg, guess, feedback)
             # self.possible_guesses = self.possible_answers
 
-        self.history.append(guess)
+        self.history[guess] = feedback
 
         return feedback
     def with_guesses(self, *guesses: str):
