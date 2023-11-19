@@ -12,6 +12,8 @@ class Pattern:
         dict.fromkeys('gGcC', '🟩')
     )
 
+    _trans_table_pattern_to_str = str.maketrans('⬛🟨🟩', 'BYG')
+
     @staticmethod
     def from_str(s: str):
         """
@@ -20,6 +22,10 @@ class Pattern:
         [GC]  🟩
         """
         return s.translate(Pattern._trans_table_str_to_pattern)
+
+    @staticmethod
+    def to_str(pat: str):
+        return pat.translate(Pattern._trans_table_pattern_to_str)
 
 
 class Status(IntEnum):
