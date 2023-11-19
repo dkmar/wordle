@@ -251,6 +251,13 @@ class Game(Wordle):
         self.history.append(guess)
 
         return feedback
+    def with_guesses(self, *guesses: str):
+        assert self.answer != ''
+
+        for guess in guesses:
+            self.play(guess)
+
+        return self
 
     def score_guess(self, guess: str):
         guess_id = self.word_index[guess]
@@ -321,6 +328,11 @@ class Game(Wordle):
         # return self.guesses[pg[i]]
         return self.guesses[pg[i]]
 
+    from typing import Iterable
+    def with_limited_answers(self, words: Iterable[str]):
+        word_ids = (self.word_index[word] for word in words)
+        self.possible_answers = np.array(sorted(word_ids))
+        return self
 
 
 # def cmp_scoring():
