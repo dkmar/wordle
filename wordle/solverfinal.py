@@ -168,8 +168,8 @@ class WordleSolver:
         num_answers_for_patterns = bins[bins > 0]
 
         answer_dist = num_answers_for_patterns / feedbacks.size
-        information = -np.log2(answer_dist)
-        return answer_dist.dot(information)
+        information = np.log2(answer_dist)
+        return -answer_dist.dot(information)
 
     def partitions(self, guess_id: int, possible_answers: np.ndarray[np.int16]) -> int:
         # partitions
