@@ -142,16 +142,25 @@ class Game:
 
 
 class WordleSolver:
-    def __init__(self, answer: str = 'BAKER', hard_mode: bool = False, optimal: bool = False):
+    def __init__(self, hard_mode: bool = False):
         guess_feedbacks_array = get_guess_feedbacks_array(guesses, guesses, pattern_index)
         self.guess_feedbacks_array = guess_feedbacks_array
         self.hard_mode = hard_mode
-        self.game = Game(guess_feedbacks_array, answer=answer, hard_mode=hard_mode)
-        self.optimal = optimal
+        self.game = None
+        self.optimal = False
+        self.solution_tree = None
 
-        if optimal:
-            self.solution_tree = self.map_solutions('TARSE', find_optimal=True)
+    def for_answer(self, answer: str):
+        self.new_game(answer)
+        return self
 
+    def with_optimal_tree(self, starting_word: str):
+        if not self.game:
+            self.new_game('')
+
+        self.optimal = True
+        self.solution_tree = self.map_solutions(starting_word, find_optimal=True)
+        return self
 
 
     def new_game(self, answer: str):
@@ -190,16 +199,21 @@ class WordleSolver:
     ) -> tuple[np.ndarray, ...]:
         partitions = np.array([self.partitions(guess_id, possible_answers)
                                for guess_id in possible_guesses])
+
         can_be_answer = np.isin(possible_guesses, possible_answers, assume_unique=True)
 
         possible_pillars = np.intersect1d(possible_answers, pillars_of_doom, assume_unique=True)
+        if possible_pillars.size == 0 or possible_answers.size <= 10:
+            return partitions, can_be_answer
+
         pillar_partitions = np.array([self.partitions(guess_id, possible_pillars)
                                       for guess_id in possible_guesses])
         can_be_pillar = np.isin(possible_guesses, pillars_of_doom, assume_unique=True)
-        # TODO: revisit this penalty? the concept is we halve the pillar partition contributions for pillar guesses
-        pillar_penalty = pillar_partitions * can_be_pillar / 2
+        # TODO: revisit this penalty? the concept is we reduce the pillar partition contributions for pillar guesses
+        # we need to retain the best guesses within as small a pool as possible (the k=20).
+        pillar_penalty = np.mean(pillar_partitions) / np.log10(possible_answers.size)
 
-        return partitions + pillar_partitions - pillar_penalty, can_be_answer
+        return partitions + pillar_partitions - (pillar_penalty * can_be_pillar), can_be_answer
 
     def basic_heuristic(self,
                         possible_guesses: np.ndarray[np.int16],
@@ -224,13 +238,13 @@ class WordleSolver:
         scorefn = self.pillar_aware_heuristic if self.hard_mode else self.basic_heuristic
         guess_id = self._best_guesses(game.possible_guesses, game.possible_answers,
                                       scorefn=scorefn,
-                                      k=1)
+                                      k=1)[0]
 
         return guesses[guess_id]
 
     def top_guesses_info(self, k: int = 10) -> list:
         '''
-        guess, entropy, partitions, max partition size, pillar partitions, scaled word freq, can be answer?
+        guess, "score", entropy, partitions, max partition size, pillar partitions, scaled word freq, can be answer?
         '''
         game = self.game
         possible_guesses, possible_answers = game.possible_guesses, game.possible_answers
@@ -274,7 +288,7 @@ class WordleSolver:
 
         if k == 1:
             i = lexmax(*keys) if len(keys) > 1 else np.argmax(keys[0])
-            return possible_guesses[i]
+            return possible_guesses[[i]]
 
         key = np.fromiter(zip(*keys), dtype='f,b') if len(keys) > 1 else keys[0]
         inds = np.argpartition(key, -k)[-k:]
@@ -368,7 +382,7 @@ class WordleSolver:
         return best_tree
 
 def best_starts():
-    solver = WordleSolver()
+    solver = WordleSolver().for_answer('')
     for start in 'SLATE', 'TARSE', 'LEAST', 'CRANE', 'SALET', 'LEAPT', 'STEAL':
         tree = solver.map_solutions(start, find_optimal=True)
         cnts = tree.answer_depth_distribution
@@ -383,4 +397,4 @@ def best_starts():
         print(s)
 
 # best_starts()
-solver = WordleSolver('AGING', hard_mode=True, optimal=True)
+# solver = WordleSolver('AGING', hard_mode=True, optimal=True)
