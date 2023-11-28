@@ -7,7 +7,8 @@ import numpy as np
 
 # import wordle.evaluation as evaluation
 from wordle.lib import Pattern
-from wordle.solver import Wordle, Game
+# from wordle.solver import Wordle, Game
+from wordle.solverfinal import WordleSolver, ANSWERS
 # if __name__ == '__main__':
 #     import wordle.evaluation as evaluation
 #     from wordle.evaluation import GUESSES, guess_index, get_possible_words, best_guess, guess_feedbacks_array, refine_wordset
@@ -25,17 +26,22 @@ def cli():
 @click.option("-h", "hard_mode", is_flag=True)
 def play(answer: str | None, hard_mode: bool):
     "Play a game interactively."
-    game = Game(answer, hard_mode=hard_mode)
+    if answer not in ANSWERS:
+        click.echo('Given answer is not in answer set.')
+        return
+
+    solver = WordleSolver(hard_mode).for_answer(answer)
+    game = solver.game
 
     for round_number in itertools.count(1):
         remaining = len(game.possible_answers)
         click.echo(f'Round {round_number}')
         click.echo(f'# possible answers: {remaining}')
 
-        for guess, entropy, parts, max_part_size, pillar_parts, freq, is_possible in game.top_guesses(20):
+        for i, (guess, score, entropy, parts, max_part_size, pillar_parts, freq, is_possible) in enumerate(solver.top_guesses_info(75), 1):
             possible_symbol = '✅' if is_possible else '❌'
             fb = game.grade_guess(guess) if answer else ''
-            click.echo(f'\t{guess}: {entropy:.2f} {parts} {max_part_size} {pillar_parts} {freq:>10.2f} {possible_symbol} {fb}')
+            click.echo(f'\t({i}) {guess}: {score:.1f} {entropy:.2f} {parts:>.2f} {max_part_size:>3d} {pillar_parts:>2d} {freq:>10.2f} {possible_symbol} {fb}')
 
         click.echo()
         guess = click.prompt('Guess').upper()
@@ -59,14 +65,15 @@ def play(answer: str | None, hard_mode: bool):
         # actual_entropy = evaluation.actual_info_from_guess(guess, fb, possible_words)
         # click.echo(f'{fb} {actual_entropy} Bits')
 
-def solve(answer: str, starting_word: str, hard_mode: bool) -> dict[str]:
-    game = Game(answer, hard_mode=hard_mode)
+def solve(answer: str, starting_word: str, solver: WordleSolver) -> dict[str]:
+    solver.new_game(answer)
+    game = solver.game
     feedback = game.play(starting_word)
 
     rounds = 1
     while feedback != '🟩🟩🟩🟩🟩' and rounds < 10:
         rounds += 1
-        guess = game.best_guess()
+        guess = solver.best_guess()
         feedback = game.play(guess)
 
     return game.history
@@ -77,7 +84,8 @@ def solve(answer: str, starting_word: str, hard_mode: bool) -> dict[str]:
 @click.option("-w", "--w", "starting_word", default='SLATE', help='Set a starting word.')
 @click.option("-v", "verbose", is_flag=True)
 @click.option("-h", "hard_mode", is_flag=True)
-def bench(n: int | None, starting_word: str, verbose:  bool, hard_mode: bool):
+@click.option("-o", "optimal", is_flag=True)
+def bench(n: int | None, starting_word: str, verbose:  bool, hard_mode: bool, optimal: bool):
     with open('wordle/data/wordlist_nyt20230701_hidden', 'r') as f:
         words = map(str.strip, f)
         REAL_ANSWER_SET = tuple(map(str.upper, words))
@@ -88,7 +96,13 @@ def bench(n: int | None, starting_word: str, verbose:  bool, hard_mode: bool):
     total_rounds_needed = 0
     count_failed = 0
 
-    solve_game = functools.partial(solve, starting_word=starting_word.upper(), hard_mode=hard_mode)
+    solver = WordleSolver(hard_mode)
+    if optimal:
+        click.echo('Building optimal tree... ', nl=False)
+        solver = solver.with_optimal_tree(starting_word)
+        click.echo('Done.')
+
+    solve_game = functools.partial(solve, solver=solver, starting_word=starting_word.upper())
     game_results = map(solve_game, answers)
     items = zip(range(1, N+1), answers, game_results)
     print_info = lambda item: f'[{item[0]}] {item[1]} {len(item[2])} {total_rounds_needed/item[0]:.2f}' if item else None
@@ -132,8 +146,23 @@ def explore(answers):
             # offset += ' '
 
 
+@cli.command()
+def leaderboard():
+    solver = WordleSolver(hard_mode=True).with_optimal_tree(starting_word='SALET')
+    tree = solver.solution_tree
 
+    def find_path(answer: str) -> str:
+        path = [tree.guess]
+        curr = tree
+        while curr.guess != answer:
+            curr = curr[solver.grade_guess(curr.guess, answer)]
+            path.append(curr.guess)
 
+        return ','.join(path)
+
+    original_answers = ANSWERS[:tree.answers_in_tree]
+    for ans in original_answers:
+        click.echo(find_path(ans))
 
 
 @cli.command(name="command")
