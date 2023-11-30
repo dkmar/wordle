@@ -13,6 +13,7 @@ class SolutionTree(dict[str, 'SolutionTree']):
         self.guess = guess
         self.is_answer = is_answer
         self.level = level
+        self.cmp_fn = self.cmp_key_non_losing
 
     @property
     def answer_depths(self) -> dict[str, int]:
@@ -56,8 +57,7 @@ class SolutionTree(dict[str, 'SolutionTree']):
         best = max((1 + subtree.max_guess_depth for subtree in self.values()), default=0)
         return best or int(self.is_answer)
 
-    @property
-    def cmp_key(self) -> tuple[int, int, bool]:
+
         # avg depth, # failing? or max depth?, is_answer
         # dd = self.answer_depth_distribution
         # total_guesses = sum(depth * count
@@ -66,12 +66,21 @@ class SolutionTree(dict[str, 'SolutionTree']):
         # return (total_guesses, max_depth, not self.is_answer)
         # return (self.max_guess_depth , self.total_guesses, not self.is_answer)
 
-        return not (self.level + self.max_guess_depth <= 6), self.total_guesses, not self.is_answer
+        # return not (self.level + self.max_guess_depth <= 6), self.total_guesses, not self.is_answer
         # return (self.total_guesses, self.max_guess_depth, not self.is_answer)
     # def cmp_key_worst_case(self) -> tuple[int, int, bool]:
     #     return (self.max_guess_depth, self.total_guesses, not self.is_answer)
-    # def cmp_key_capped_depth(self):
-    #     return not (self.level + self.max_guess_depth <= 6), self.total_guesses, not self.is_answer
+    @property
+    def cmp_key(self):
+        return self.cmp_fn()
+
+    def cmp_key_min_avg(self):
+        # avg = (self.total_guesses / self.answers_in_tree) if self.answers_in_tree else 4
+        # return avg, self.level + self.max_guess_depth, not self.is_answer
+        return self.total_guesses, self.level + self.max_guess_depth, not self.is_answer
+
+    def cmp_key_non_losing(self):
+        return not (self.level + self.max_guess_depth <= 6), self.total_guesses, not self.is_answer
 
 
 
