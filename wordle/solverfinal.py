@@ -1,15 +1,16 @@
-import functools
+from dataclasses import dataclass
 from collections.abc import Callable, Mapping, Iterable
+from pathlib import Path
 from typing import Optional
 
-import wordle.feedback
-from wordle.feedback import get_guess_feedbacks_array
-from wordle.lib import Pattern
 import numpy as np
 
-from wordle.utils import feedback_inverted_index, lexmax
+import wordle.feedback
+import wordle.heuristics as heuristics
+from wordle.feedback import get_guess_feedbacks_array
+from wordle.lib import Pattern
 from wordle.solutiontree import SolutionTree
-
+from wordle.utils import lexmax
 
 ''' Gameplay (Hard Mode)
 1. Initial state has the target word.
@@ -34,25 +35,42 @@ We want to choose the next word
 - keep the top k candidates (for reporting)
 repeat by playing a candidate
 '''
-with open('wordle/data/allowed_except_relevant.txt', 'r') as f:
-    words = map(str.strip, f)
-    OTHER_WORDS = tuple(map(str.upper, words))
 
-with open('wordle/data/relevant_words.txt', 'r') as f:
-    words = map(str.strip, f)
-    RELEVANT_WORDS = tuple(map(str.upper, words))
+'''
+<datasets>
+<Config>
+- hard mode
+- answer set
+<Game>
+<Solver>
+'''
 
-with open('wordle/data/cat_hidden_answers.txt', 'r') as f:
-    words = map(str.strip, f)
-    HIDDEN_ANSWERS = tuple(map(str.upper, words))
+DATA_DIR = Path.cwd() / 'wordle' / 'data'
+# original set of answers (prior to NYT acquisition) [2315]
+# (this is commonly used for benchmarks)
+ORIGINAL_HIDDEN_ANSWERS_PATH = DATA_DIR / 'original_hidden_answers.txt'
+# all hidden answers past and present. [3171]
+ALL_HIDDEN_ANSWERS_PATH = DATA_DIR / 'cat_hidden_answers.txt'
+# all guesses allowed by wordle. [14855]
+ALLOWED_WORDS_PATH = DATA_DIR / 'allowed_words.txt'
+# curated set of "human" words allowed by wordle.
+HUMAN_WORDS_PATH = DATA_DIR / 'relevant_words.txt'
+# word frequencies from google ngrams (2019-)
+WORD_FREQS_PATH = DATA_DIR / 'word_freqs_2019_valid.txt'
+# pillars of doom. words matching patterns that trouble hard mode. (eg LIGHT, FIGHT, MIGHT, ...)
+PILLARS_OF_DOOM_PATH = DATA_DIR / 'pillars_of_doom.txt'
+# array of feedback patterns for (guess, answer) pairs
+GUESS_FEEDBACKS_PATH = DATA_DIR / 'guess_feedbacks_array.npy'
 
 
-ANSWERS = HIDDEN_ANSWERS
-GUESSES = RELEVANT_WORDS + OTHER_WORDS
+def read_words_from_file(words_file: Path) -> tuple[str]:
+    with open(words_file, 'r') as f:
+        words = map(str.strip, f)
+        return tuple(map(str.upper, words))
 
 
 def get_word_frequencies(word_index: Mapping[str, int]) -> np.ndarray:
-    with open('wordle/data/word_freqs_2019_valid.txt', 'r') as f:
+    with open(WORD_FREQS_PATH, 'r') as f:
         lines = map(str.strip, f)
         freqs = [0] * len(word_index)
         for word, count in map(str.split, lines):
@@ -63,228 +81,95 @@ def get_word_frequencies(word_index: Mapping[str, int]) -> np.ndarray:
 
         return np.array(freqs)
 
-def get_pillars_of_doom(word_index: Mapping[str, int]) -> np.ndarray:
-    with open('wordle/data/pillars_of_doom.txt', 'r') as f:
-        lines = map(str.strip, f)
-        words = map(str.upper, lines)
-        return np.array([word_index[word]
-                         for word in words if word in word_index], dtype=np.int16)
 
-def get_original_answers(word_index: Mapping[str, int]) -> np.ndarray:
-    with open('wordle/data/original_hidden_answers.txt', 'r') as f:
-        lines = map(str.strip, f)
-        words = map(str.upper, lines)
-        return np.array([word_index[word]
-                         for word in words if word in word_index], dtype=np.int16)
+def get_index_for_words(words_file: Path, word_index: Mapping[str, int]) -> np.ndarray[np.int16]:
+    words = read_words_from_file(words_file)
+    return np.array([word_index[word]
+                     for word in words if word in word_index], dtype=np.int16)
 
 
-guesses = GUESSES
-answers = ANSWERS
-word_index = {guess: i
-              for i, guess in enumerate(guesses)}
-
-patterns = Pattern.ALL_PATTERNS
-pattern_index = {pattern: i
-                 for i, pattern in enumerate(patterns)}
-
-
-word_freqs = get_word_frequencies(word_index)
-scaled_word_freqs = word_freqs / word_freqs[:len(answers)].min()
-relative_word_freqs = word_freqs / word_freqs.sum()
-
-pillars_of_doom = get_pillars_of_doom(word_index)
-
-
-def refine_possible_words(possible_words: np.ndarray[np.int16],
-                          guess_feedbacks_array: np.ndarray,
-                          guess_id: int, feedback_id: int) -> np.ndarray[np.int16]:
-    # current subset of answers
-    subset = guess_feedbacks_array[guess_id, possible_words]
-    next_possible_words = possible_words[subset == feedback_id]
-    return next_possible_words
-
-
+@dataclass
 class Game:
-    def __init__(self,
-                 guess_feedbacks_array: np.ndarray,
-                 answer: str = '', hard_mode: bool = True,
-                 use_original_answer_set: bool = False):
-        self.guess_feedbacks_array = guess_feedbacks_array
-        self.answer = answer
-        self.possible_guesses = np.arange(len(guesses), dtype=np.int16)
-        self.possible_answers = get_original_answers(word_index)
-        self.hard_mode = hard_mode
-        self.history = {}
-
-        self.grade_guess = functools.partial(wordle.feedback.grade_guess, answer=answer)
-
-    # builders
-    def with_guesses(self, *guesses: str):
-        assert self.answer != ''
-
-        for guess in guesses:
-            self.play(guess)
-
-        return self
-
-    def with_limited_answers(self, words: Iterable[str]):
-        word_ids = (word_index[word] for word in words)
-        self.possible_answers = np.array(sorted(word_ids))
-        return self
-
-    def play(self, guess: str, feedback: None | str = None) -> str:
-        if feedback is None:
-            assert len(self.answer) == 5
-            feedback = self.grade_guess(guess)
-
-        guess_id = word_index[guess]
-        feedback_id = pattern_index[feedback]
-
-        self.possible_answers = refine_possible_words(self.possible_answers, self.guess_feedbacks_array,
-                                                      guess_id, feedback_id)
-        if self.hard_mode:
-            self.possible_guesses = refine_possible_words(self.possible_guesses, self.guess_feedbacks_array,
-                                                          guess_id, feedback_id)
-
-        self.history[guess] = feedback
-
-        return feedback
+    answer: str
+    possible_guesses: np.ndarray[np.int16]
+    possible_answers: np.ndarray[np.int16]
+    history: dict[str, str]
 
 
 class WordleSolver:
-    def __init__(self, hard_mode: bool = False):
-        guess_feedbacks_array = get_guess_feedbacks_array(guesses, guesses, pattern_index)
-        self.guess_feedbacks_array = guess_feedbacks_array
+    def __init__(self,
+                 hard_mode: bool = False,
+                 use_original_answer_list: bool = False):
+        self.words = tuple(read_words_from_file(ALLOWED_WORDS_PATH))
+        self.word_index = {guess: i
+                           for i, guess in enumerate(self.words)}
+        self.word_freqs = get_word_frequencies(self.word_index)
+        self.pillars_of_doom = get_index_for_words(PILLARS_OF_DOOM_PATH, self.word_index)
+
+        self.patterns = Pattern.ALL_PATTERNS
+        self.pattern_index = {pattern: i
+                              for i, pattern in enumerate(self.patterns)}
+
+        self.guess_feedbacks_array = get_guess_feedbacks_array(self.words, self.words, self.pattern_index,
+                                                               GUESS_FEEDBACKS_PATH)
+        self.possible_guesses = np.arange(len(self.words), dtype=np.int16)
+        self.possible_answers = get_index_for_words(
+            ALL_HIDDEN_ANSWERS_PATH if not use_original_answer_list else ORIGINAL_HIDDEN_ANSWERS_PATH,
+            self.word_index
+        )
+
+        self.game = Game('', self.possible_guesses, self.possible_answers, {})
+
         self.hard_mode = hard_mode
-        self.game: Optional[Game] = None
-        self.optimal: bool = False
+        self.optimal = False
         self.solution_tree: Optional[SolutionTree] = None
         self.grade_guess = wordle.feedback.grade_guess
-
 
     def for_answer(self, answer: str):
         self.new_game(answer)
         return self
 
     def with_optimal_tree(self, starting_word: str):
-        if not self.game:
-            self.new_game('')
-
         self.optimal = True
-        self.solution_tree = self.map_solutions(starting_word, find_optimal=True)
+
+        import pickle
+        path = Path(f'wordle/data/{starting_word}_tree.pickle')
+        if path.exists():
+            with open(path, 'rb') as f:
+                self.solution_tree = pickle.load(f)
+        else:
+            self.solution_tree = self.map_solutions(starting_word, find_optimal=True)
+            with open(path, 'wb') as f:
+                pickle.dump(self.solution_tree, f)
+
         return self
 
-
     def new_game(self, answer: str):
-        self.game = Game(self.guess_feedbacks_array,
-                         answer=answer,
-                         hard_mode=self.hard_mode)
+        self.game = Game(answer, self.possible_guesses, self.possible_answers, {})
 
+    def filter_words(self, possible_words: np.ndarray[np.int16],
+                     guess_id: int, feedback_id: int) -> np.ndarray[np.int16]:
+        # current subset of answers
+        subset = self.guess_feedbacks_array[guess_id, possible_words]
+        next_possible_words = possible_words[subset == feedback_id]
+        return next_possible_words
 
-    def entropy(self, guess_id: int, possible_answers: np.ndarray[np.int16]) -> np.float64:
-        feedbacks = self.guess_feedbacks_array[guess_id, possible_answers]
+    def play(self, guess: str, feedback: Optional[str] = None) -> str:
+        game = self.game
+        if feedback is None:
+            assert len(game.answer) == 5
+            feedback = self.grade_guess(guess, game.answer)
 
-        # patterns, num_answers_for_patterns = np.unique(feedbacks, return_counts=True)
-        bins = np.bincount(feedbacks, minlength=len(patterns))
-        num_answers_for_patterns = bins[bins > 0]
+        guess_id = self.word_index[guess]
+        feedback_id = self.pattern_index[feedback]
 
-        answer_dist = num_answers_for_patterns / feedbacks.size
-        information = np.log2(answer_dist)
-        return -answer_dist.dot(information)
+        game.possible_answers = self.filter_words(game.possible_answers, guess_id, feedback_id)
+        if self.hard_mode:
+            game.possible_guesses = self.filter_words(game.possible_guesses, guess_id, feedback_id)
 
-    def entropy_level2(self, guess_id: int,
-                       possible_guesses: np.ndarray[np.int16], possible_answers: np.ndarray[np.int16]) -> float:
+        game.history[guess] = feedback
 
-        feedbacks = self.guess_feedbacks_array[guess_id, possible_answers]
-        bins = np.bincount(feedbacks, minlength=len(patterns))
-        possible_feedbacks = bins.nonzero()[0]
-        entropies = []
-
-        for feedback_id in possible_feedbacks:
-            next_possible_guesses = refine_possible_words(possible_guesses, self.guess_feedbacks_array,
-                                                          guess_id, feedback_id)
-            next_possible_answers = refine_possible_words(possible_answers, self.guess_feedbacks_array,
-                                                          guess_id, feedback_id)
-            ent = max(self.entropy(guess_id, next_possible_answers) for guess_id in next_possible_guesses)
-            entropies.append(ent)
-
-        p = bins[possible_feedbacks] / feedbacks.size
-        return p.dot(np.array(entropies))
-
-    def partitions(self, guess_id: int, possible_answers: np.ndarray[np.int16]) -> int:
-        # partitions
-        feedbacks = self.guess_feedbacks_array[guess_id, possible_answers]
-        bins = np.bincount(feedbacks, minlength=len(patterns))
-        return np.count_nonzero(bins)
-
-    def partitions_and_max(self, guess_id: int, possible_answers: np.ndarray[np.int16]) -> tuple[int, int]:
-        # partitions
-        feedbacks = self.guess_feedbacks_array[guess_id, possible_answers]
-        bins = np.bincount(feedbacks, minlength=len(patterns))
-        bins = bins[bins > 0]
-        return bins.size, bins.max()
-
-    def partitions_level2(self, guess_id: int,
-                          possible_guesses: np.ndarray[np.int16], possible_answers: np.ndarray[np.int16]) -> float:
-
-        feedbacks = self.guess_feedbacks_array[guess_id, possible_answers]
-        bins = np.bincount(feedbacks, minlength=len(patterns))
-        possible_feedbacks = bins.nonzero()[0]
-
-        total_parts = 0
-        num_buckets = possible_feedbacks.size
-
-        for feedback_id in possible_feedbacks:
-
-            next_possible_guesses = refine_possible_words(possible_guesses, self.guess_feedbacks_array,
-                                                          guess_id, feedback_id)
-            next_possible_answers = refine_possible_words(possible_answers, self.guess_feedbacks_array,
-                                                          guess_id, feedback_id)
-            parts = max(self.partitions(guess_id, next_possible_answers) for guess_id in next_possible_guesses)
-            total_parts += parts
-
-        return total_parts / num_buckets
-
-
-    def pillar_aware_heuristic(self,
-                               possible_guesses: np.ndarray[np.int16],
-                               possible_answers: np.ndarray[np.int16]
-    ) -> tuple[np.ndarray, ...]:
-        partitions = np.array([self.partitions(guess_id, possible_answers)
-                               for guess_id in possible_guesses])
-
-        can_be_answer = np.isin(possible_guesses, possible_answers, assume_unique=True)
-
-        possible_pillars = np.intersect1d(possible_answers, pillars_of_doom, assume_unique=True)
-        if possible_pillars.size == 0 or possible_answers.size <= 10:
-            return partitions, can_be_answer
-
-        pillar_partitions = np.array([self.partitions(guess_id, possible_pillars)
-                                      for guess_id in possible_guesses])
-        is_pillar = np.isin(possible_guesses, pillars_of_doom, assume_unique=True)
-        # TODO: revisit this penalty? the concept is we reduce the pillar partition contributions for pillar guesses
-        # we need to retain the best guesses within as small a pool as possible (the k=20).
-        pillar_penalty = np.mean(pillar_partitions) / np.log10(possible_answers.size)
-
-        return partitions + (pillar_partitions - pillar_penalty * is_pillar), can_be_answer
-
-    def basic_heuristic(self,
-                        possible_guesses: np.ndarray[np.int16],
-                        possible_answers: np.ndarray[np.int16]
-    ) -> tuple[np.ndarray, ...]:
-        partitions = np.array([self.partitions(guess_id, possible_answers)
-                               for guess_id in possible_guesses])
-        can_be_answer = np.isin(possible_guesses, possible_answers, assume_unique=True)
-        return partitions, can_be_answer
-
-    def basic_heuristic2(self,
-                        possible_guesses: np.ndarray[np.int16],
-                        possible_answers: np.ndarray[np.int16]
-    ) -> tuple[np.ndarray, ...]:
-        partitions = np.array([self.entropy(guess_id, possible_answers)
-                               for guess_id in possible_guesses])
-        can_be_answer = np.isin(possible_guesses, possible_answers, assume_unique=True)
-        return partitions, can_be_answer
+        return feedback
 
     def best_guess(self) -> str:
         if self.optimal:
@@ -297,12 +182,13 @@ class WordleSolver:
             return curr.guess
 
         game = self.game
-        scorefn = self.pillar_aware_heuristic if self.hard_mode else self.basic_heuristic
-        guess_id = self._best_guesses(game.possible_guesses, game.possible_answers,
-                                      scorefn=scorefn,
-                                      k=1)[0]
+        keys = heuristics.basic_heuristic2(self.guess_feedbacks_array, game.possible_guesses, game.possible_answers)
+        i = lexmax(*keys)
+        # print('\n', -keys[0][i], keys[1][i], '\n')
+        guess_id = game.possible_guesses[i]
+        # guess_id = self.best_guesses(game.possible_guesses, game.possible_answers, k=1)[0]
 
-        return guesses[guess_id]
+        return self.words[guess_id]
 
     def top_guesses_info(self, k: int = 10) -> list:
         '''
@@ -311,50 +197,63 @@ class WordleSolver:
         game = self.game
         possible_guesses, possible_answers = game.possible_guesses, game.possible_answers
 
-        scorefn = self.pillar_aware_heuristic if self.hard_mode else self.basic_heuristic
-        top_ids = self._best_guesses(possible_guesses, possible_answers,
-                                     scorefn=scorefn,
-                                     k=k)
+        top_ids = self._best_guesses(possible_guesses, possible_answers, k=k)
         # top_ids = self.best_guesses(possible_guesses, possible_answers, k=k)
 
-        keys = scorefn(top_ids, possible_answers)
+        if self.hard_mode:
+            keys = heuristics.pillar_aware_heuristic(self.guess_feedbacks_array, self.pillars_of_doom,
+                                                     top_ids, possible_answers)
+        else:
+            keys = heuristics.basic_heuristic(self.guess_feedbacks_array, top_ids, possible_answers)
+
         inds = np.lexsort(keys[::-1])[::-1]
         top_ids = top_ids[inds]
 
-        # ents = np.array([self.entropy(guess_id, possible_answers) for guess_id in top_ids])
-        ents = np.array([self.entropy_level2(guess_id, possible_guesses, possible_answers)
-                         for guess_id in top_ids])
-        partitions, max_partition = np.array([self.partitions_and_max(guess_id, possible_answers)
+        ents = np.array([heuristics.entropy(self.guess_feedbacks_array, guess_id, possible_answers) for guess_id in top_ids])
+        # ents = np.array([heuristics.entropy_level2(self.guess_feedbacks_array,
+        #                                            guess_id, possible_guesses, possible_answers)
+        #                  for guess_id in top_ids])
+        partitions, max_partition = np.array([heuristics.partitions_and_max(self.guess_feedbacks_array,
+                                                                            guess_id, possible_answers)
                                               for guess_id in top_ids]).T
 
-        partitions = np.array([self.partitions_level2(guess_id, possible_guesses, possible_answers)
+        partitions = np.array([heuristics.partitions_level2(self.guess_feedbacks_array,
+                                                            guess_id, possible_guesses, possible_answers)
                                for guess_id in top_ids])
 
         can_be_answer = np.isin(top_ids, possible_answers, assume_unique=True)
 
-        possible_pillars = np.intersect1d(possible_answers, pillars_of_doom, assume_unique=True)
-        pillar_partitions = np.array([self.partitions(guess_id, possible_pillars)
+        possible_pillars = np.intersect1d(possible_answers, self.pillars_of_doom, assume_unique=True)
+        pillar_partitions = np.array([heuristics.partitions(self.guess_feedbacks_array, guess_id, possible_pillars)
                                       for guess_id in top_ids])
+        exp_score = -heuristics.basic_heuristic2(self.guess_feedbacks_array, top_ids, possible_answers)[0]
 
         # rank = ents.argsort()[::-1].argsort()
-        top_guesses = (guesses[gid] for gid in top_ids)
-        info = zip(top_guesses, keys[0][inds], ents, partitions, max_partition, pillar_partitions, scaled_word_freqs[top_ids], can_be_answer)
+        top_guesses = (self.words[gid] for gid in top_ids)
+        word_freqs = self.word_freqs[top_ids]
+        scaled_word_freqs = word_freqs / word_freqs.sum()
+        # info = zip(top_guesses, keys[0][inds], ents, partitions, max_partition, pillar_partitions,
+        #            scaled_word_freqs, can_be_answer)
+        info = zip(top_guesses, exp_score, ents, partitions, max_partition, pillar_partitions,
+                   scaled_word_freqs, can_be_answer)
         return [guess_info for guess_info in info]
-
 
     def _best_guesses(self,
                       possible_guesses: np.ndarray[np.int16],
                       possible_answers: np.ndarray[np.int16],
-                      scorefn: Callable[[np.ndarray[np.int16], np.ndarray[np.int16]], tuple[np.ndarray, ...]],
                       k: int = 20
-    ) -> np.ndarray:
+                      ) -> np.ndarray:
         if possible_answers.size == 1:
             return possible_answers
 
         if possible_guesses.size <= k:
             return possible_guesses
 
-        keys = scorefn(possible_guesses, possible_answers)
+        if self.hard_mode:
+            keys = heuristics.pillar_aware_heuristic(self.guess_feedbacks_array, self.pillars_of_doom,
+                                                     possible_guesses, possible_answers)
+        else:
+            keys = heuristics.basic_heuristic(self.guess_feedbacks_array, possible_guesses, possible_answers)
 
         if k == 1:
             i = lexmax(*keys) if len(keys) > 1 else np.argmax(keys[0])
@@ -364,7 +263,7 @@ class WordleSolver:
         inds = np.argpartition(key, -k)[-k:]
         return possible_guesses[inds]
 
-    def best_guesses(self,
+    def __best_guesses_todo_delete(self,
                      possible_guesses: np.ndarray[np.int16],
                      possible_answers: np.ndarray[np.int16],
                      k: int = 20):
@@ -374,7 +273,8 @@ class WordleSolver:
         if possible_guesses.size <= k:
             return possible_guesses
 
-        keys = self.pillar_aware_heuristic(possible_guesses, possible_answers)
+        keys = heuristics.pillar_aware_heuristic(self.guess_feedbacks_array, self.pillars_of_doom,
+                                                 possible_guesses, possible_answers)
         key = np.fromiter(zip(*keys), dtype='f,b') if len(keys) > 1 else keys[0]
 
         kk = min(possible_guesses.size, 60)
@@ -383,8 +283,9 @@ class WordleSolver:
 
         # deep_ents = np.array([self.entropy_level2(guess_id, possible_guesses, possible_answers)
         #                        for guess_id in top])
-        deep_key = np.array([self.partitions_level2(guess_id, possible_guesses, possible_answers)
-                              for guess_id in top])
+        deep_key = np.array([heuristics.partitions_level2(self.guess_feedbacks_array, guess_id,
+                                                          possible_guesses, possible_answers)
+                             for guess_id in top])
 
         if k == 1:
             i = np.argmax(deep_key)
@@ -392,9 +293,51 @@ class WordleSolver:
 
         a = possible_guesses[np.argpartition(key, -15)[-15:]]
         b = top[np.argpartition(deep_key, -15)[-15:]]
-        return np.union1d(a,b)
+        return np.union1d(a, b)
 
 
+    def best_guesses(self,
+                     possible_guesses: np.ndarray[np.int16],
+                     possible_answers: np.ndarray[np.int16],
+                     k: int = 30,
+                     candidates_to_consider: int = 60) -> np.ndarray:
+        # early exit if already < k
+        if possible_answers.size == 1:
+            return possible_answers
+        if possible_guesses.size <= k:
+            return possible_guesses
+
+        if not self.hard_mode:
+            keys = heuristics.basic_heuristic(self.guess_feedbacks_array, possible_guesses, possible_answers)
+            if k == 1:
+                i = lexmax(*keys)
+                return possible_guesses[[i]]
+            else:
+                key = np.fromiter(zip(*keys), dtype='f,b')
+                inds = np.argpartition(key, -k)[-k:]
+                return possible_guesses[inds]
+
+        # hard mode:
+        # we use a heuristic to get a pool of top candidates, then we look two levels deep to select for best
+        keys = heuristics.pillar_aware_heuristic(self.guess_feedbacks_array, self.pillars_of_doom,
+                                                 possible_guesses, possible_answers)
+        if k == 1:
+            i = lexmax(*keys)
+            return possible_guesses[[i]]
+        else:
+            key = np.fromiter(zip(*keys), dtype='f,b')
+            num_candidates = min(possible_guesses.size, candidates_to_consider)
+            inds = np.argpartition(key, -num_candidates)[-num_candidates:]
+            top_ids = possible_guesses[inds]
+
+            deep_key = np.array([heuristics.partitions_level2(self.guess_feedbacks_array, guess_id,
+                                                              possible_guesses, possible_answers)
+                                 for guess_id in top_ids])
+
+            k1, k2 = round(k / 2), (k // 2)
+            pool1 = np.argpartition(key, -k1)[-k1:]
+            pool2 = np.argpartition(deep_key, -k2)[-k2:]
+            return np.union1d(possible_guesses[pool1], top_ids[pool2])
 
 
     def map_solutions(self, starting_word: str = '', find_optimal: bool = False) -> SolutionTree:
@@ -402,7 +345,7 @@ class WordleSolver:
         possible_answers = self.game.possible_answers
 
         if starting_word:
-            guess_id = word_index[starting_word]
+            guess_id = self.word_index[starting_word]
             if find_optimal:
                 return self._map_solutions_optimal({}, possible_guesses, possible_answers,
                                                    guess_id, level=len(self.game.history))
@@ -414,30 +357,27 @@ class WordleSolver:
         else:
             return self._map_solutions_greedy(possible_guesses, possible_answers)
 
-
     def _map_solutions_greedy(self,
                               possible_guesses: np.ndarray[np.int16],
                               possible_answers: np.ndarray[np.int16],
                               given_guess_id: int | None = None) -> SolutionTree:
 
         if possible_answers.size == 1:
-            answer = answers[possible_answers[0]]
+            answer = self.words[possible_answers[0]]
             return SolutionTree(answer, True)
 
         guess_id = given_guess_id if (given_guess_id is not None) \
-            else self._best_guesses(possible_guesses, possible_answers, self.pillar_aware_heuristic, 1)
-        tree = SolutionTree(guesses[guess_id])
+            else self.best_guesses(possible_guesses, possible_answers, 1)
+        tree = SolutionTree(self.words[guess_id])
 
         feedback_ids = np.unique(self.guess_feedbacks_array[guess_id, possible_answers])
         for feedback_id in feedback_ids:
-            feedback = patterns[feedback_id]
+            feedback = self.patterns[feedback_id]
             if feedback == '🟩🟩🟩🟩🟩':
                 tree.is_answer = True
             else:
-                next_possible_guesses = refine_possible_words(possible_guesses, self.guess_feedbacks_array,
-                                                              guess_id, feedback_id)
-                next_possible_answers = refine_possible_words(possible_answers, self.guess_feedbacks_array,
-                                                              guess_id, feedback_id)
+                next_possible_guesses = self.filter_words(possible_guesses, guess_id, feedback_id)
+                next_possible_answers = self.filter_words(possible_answers, guess_id, feedback_id)
                 tree[feedback] = self._map_solutions_greedy(next_possible_guesses, next_possible_answers)
 
         return tree
@@ -450,7 +390,7 @@ class WordleSolver:
                                level: int = 0) -> SolutionTree:
 
         if possible_answers.size == 1:
-            answer = answers[possible_answers[0]]
+            answer = self.words[possible_answers[0]]
             return SolutionTree(answer, True, level)
 
         # check cache. 3,862,686 cache hits lol
@@ -463,25 +403,22 @@ class WordleSolver:
 
         best_tree = None
         best_guess_ids = [given_guess_id] if given_guess_id is not None \
-            else self.best_guesses(possible_guesses, possible_answers, 15)
-            # else self._best_guesses(possible_guesses, possible_answers, self.pillar_aware_heuristic, 20)
-
+            else self.best_guesses(possible_guesses, possible_answers, k=30)
+        # else self._best_guesses(possible_guesses, possible_answers, self.pillar_aware_heuristic, 20)
 
         for guess_id in best_guess_ids:
-            tree = SolutionTree(guesses[guess_id], level=level)
+            tree = SolutionTree(self.words[guess_id], level=level)
 
             feedback_ids = np.bincount(self.guess_feedbacks_array[guess_id, possible_answers]).nonzero()[0]
             for feedback_id in feedback_ids:
-                feedback = patterns[feedback_id]
+                feedback = self.patterns[feedback_id]
                 if feedback == '🟩🟩🟩🟩🟩':
                     tree.is_answer = True
                 else:
-                    next_possible_guesses = refine_possible_words(possible_guesses, self.guess_feedbacks_array,
-                                                                  guess_id, feedback_id)
-                    next_possible_answers = refine_possible_words(possible_answers, self.guess_feedbacks_array,
-                                                                  guess_id, feedback_id)
+                    next_possible_guesses = self.filter_words(possible_guesses, guess_id, feedback_id)
+                    next_possible_answers = self.filter_words(possible_answers, guess_id, feedback_id)
                     tree[feedback] = self._map_solutions_optimal(memo, next_possible_guesses, next_possible_answers,
-                                                                 level=level+1)
+                                                                 level=level + 1)
 
             # if tree.guess == 'CRYER' and tree.level == 2 and tree.answers_in_tree > 20:
             #     print()
@@ -493,8 +430,9 @@ class WordleSolver:
         memo[key] = best_tree
         return best_tree
 
-def best_starts():
-    solver = WordleSolver().for_answer('')
+
+def best_starts(write_file=False):
+    solver = WordleSolver(hard_mode=True, use_original_answer_list=True).for_answer('')
     # for start in 'SLATE', 'TARSE', 'LEAST', 'CRANE', 'SALET', 'LEAPT', 'STEAL':
     for start in ['SALET']:
         tree = solver.map_solutions(start, find_optimal=True)
@@ -508,11 +446,41 @@ def best_starts():
             sum(cnts[d] for d in range(7, tree.max_guess_depth + 1))
         )
         print(s)
-        with open(f'tree_{start}_v5.txt', 'w') as out:
-            out.write(str(tree))
+        if write_file:
+            with open(f'tree_{start}_v5.txt', 'w') as out:
+                out.write(str(tree))
 
+def print_entropy_remaining_guesses_data(starting_word = 'SLATE'):
+    solver = WordleSolver(hard_mode=True, use_original_answer_list=False).with_optimal_tree(starting_word=starting_word)
+    base = set(read_words_from_file(ORIGINAL_HIDDEN_ANSWERS_PATH))
+    answers = set(read_words_from_file(ALL_HIDDEN_ANSWERS_PATH)) - base
+    for answer in answers:
+        solver.new_game(answer)
+        remaining_entropy = []
+        alt = []
+
+        feedback = solver.play(starting_word)
+        rounds = 1
+        while feedback != '🟩🟩🟩🟩🟩':
+            rent = np.log2(solver.game.possible_answers.size)
+            remaining_entropy.append(rent)
+            alt_rent = (rent - np.array([heuristics.entropy(solver.guess_feedbacks_array, gid, solver.game.possible_answers)
+                           for gid in solver.game.possible_guesses])).mean()
+            alt.append(alt_rent)
+
+            rounds += 1
+            guess = solver.best_guess()
+            feedback = solver.play(guess)
+
+        guesses_remaining = rounds - 1
+        for rent, alt_rent in zip(remaining_entropy, alt):
+            print(rent, guesses_remaining, alt_rent)
+            guesses_remaining -= 1
+
+# print_entropy_remaining_guesses_data()
+# best_starts()
 # if __name__ == '__main__':
-    # best_starts()
+# best_starts()
 # solver = WordleSolver(hard_mode=True).for_answer('BOXER')
 # tree_salet = solver.map_solutions('SALET', find_optimal=True)
 # solver.game.play('SALET')
