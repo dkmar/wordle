@@ -8,7 +8,7 @@ import numpy as np
 # import wordle.evaluation as evaluation
 from wordle.lib import Pattern
 # from wordle.solver import Wordle, Game
-from wordle.solverfinal import WordleSolver, ANSWERS
+from wordle.solverfinal import WordleSolver
 # if __name__ == '__main__':
 #     import wordle.evaluation as evaluation
 #     from wordle.evaluation import GUESSES, guess_index, get_possible_words, best_guess, guess_feedbacks_array, refine_wordset
@@ -26,9 +26,9 @@ def cli():
 @click.option("-h", "hard_mode", is_flag=True)
 def play(answer: str | None, hard_mode: bool):
     "Play a game interactively."
-    if answer not in ANSWERS:
-        click.echo('Given answer is not in answer set.')
-        return
+    # if answer not in ANSWERS:
+    #     click.echo('Given answer is not in answer set.')
+    #     return
 
     solver = WordleSolver(hard_mode).for_answer(answer)
     game = solver.game
@@ -37,10 +37,11 @@ def play(answer: str | None, hard_mode: bool):
         remaining = len(game.possible_answers)
         click.echo(f'Round {round_number}')
         click.echo(f'# possible answers: {remaining}')
+        click.echo(f'Remaining Entropy: {np.log2(game.possible_answers.size)}')
 
-        for i, (guess, score, entropy, parts, max_part_size, pillar_parts, freq, is_possible) in enumerate(solver.top_guesses_info(75), 1):
+        for i, (guess, score, entropy, parts, max_part_size, pillar_parts, freq, is_possible) in enumerate(solver.top_guesses_info(60), 1):
             possible_symbol = '✅' if is_possible else '❌'
-            fb = game.grade_guess(guess) if answer else ''
+            fb = solver.grade_guess(guess, answer) if answer else ''
             click.echo(f'\t({i}) {guess}: {score:.1f} {entropy:.2f} {parts:>.2f} {max_part_size:>3d} {pillar_parts:>2d} {freq:>10.2f} {possible_symbol} {fb}')
 
         click.echo()
@@ -48,11 +49,11 @@ def play(answer: str | None, hard_mode: bool):
         if answer is None:
             feedback = click.prompt('Feedback').upper()
             fb = Pattern.from_str(feedback)
-            game.play(guess, fb)
+            solver.play(guess, fb)
             click.echo(guess)
             click.echo(fb)
         else:
-            fb = game.play(guess)
+            fb = solver.play(guess)
             click.echo(guess)
             click.echo(fb)
         print()
@@ -68,35 +69,36 @@ def play(answer: str | None, hard_mode: bool):
 def solve(answer: str, starting_word: str, solver: WordleSolver) -> dict[str]:
     solver.new_game(answer)
     game = solver.game
-    feedback = game.play(starting_word)
+    feedback = solver.play(starting_word)
 
     rounds = 1
     while feedback != '🟩🟩🟩🟩🟩' and rounds < 10:
         rounds += 1
         guess = solver.best_guess()
-        feedback = game.play(guess)
+        feedback = solver.play(guess)
+
 
     return game.history
 
 
 @cli.command()
-@click.argument("n", type=int, required=False)
+@click.argument("n", type=int, required=False, default=0)
 @click.option("-w", "--w", "starting_word", default='SLATE', help='Set a starting word.')
 @click.option("-v", "verbose", is_flag=True)
 @click.option("-h", "hard_mode", is_flag=True)
 @click.option("-o", "optimal", is_flag=True)
-def bench(n: int | None, starting_word: str, verbose:  bool, hard_mode: bool, optimal: bool):
-    with open('wordle/data/wordlist_nyt20230701_hidden', 'r') as f:
-        words = map(str.strip, f)
-        REAL_ANSWER_SET = tuple(map(str.upper, words))
+def bench(n: int, starting_word: str, verbose:  bool, hard_mode: bool, optimal: bool):
+    from wordle.solverfinal import read_words_from_file, ALL_HIDDEN_ANSWERS_PATH
+    answers = read_words_from_file(ALL_HIDDEN_ANSWERS_PATH)
+    if n:
+        answers = answers[:n]
 
-
-    answers = REAL_ANSWER_SET[:n] if n else REAL_ANSWER_SET
     N = len(answers)
     total_rounds_needed = 0
     count_failed = 0
 
     solver = WordleSolver(hard_mode)
+
     if optimal:
         click.echo('Building optimal tree... ', nl=False)
         solver = solver.with_optimal_tree(starting_word)
