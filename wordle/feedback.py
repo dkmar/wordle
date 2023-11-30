@@ -40,7 +40,7 @@ def grade_guess(guess: str, answer: str) -> str:
 
     return ''.join(feedback)
 
-
+# TODO resolve the np.uint8 vs int typing
 def feedbacks_for_guess(guess: str, answers: tuple[str], pattern_id: Mapping[str, np.uint8]) -> tuple[np.uint8]:
     return tuple(pattern_id[grade_guess(guess, answer)] for answer in answers)
 
@@ -63,12 +63,13 @@ def compute_guess_feedbacks_array(guesses: tuple[str, ...],
 
 def get_guess_feedbacks_array(guesses: tuple[str, ...],
                               answers: tuple[str, ...],
-                              pattern_index: Mapping[str, np.uint8]) -> np.ndarray[np.ndarray[np.uint8]]:
+                              pattern_index: Mapping[str, int],
+                              file_path) -> np.ndarray[np.ndarray[np.uint8]]:
     try:
-        guess_feedbacks_array = np.load('wordle/data/guess_feedbacks_array.npy')
+        guess_feedbacks_array = np.load(file_path)
     except (OSError, ValueError) as e:
         guess_feedbacks_array = compute_guess_feedbacks_array(guesses, answers, pattern_index)
-        np.save('wordle/data/guess_feedbacks_array.npy', guess_feedbacks_array)
+        np.save(file_path, guess_feedbacks_array)
 
     return guess_feedbacks_array
 
