@@ -123,6 +123,36 @@ def basic_heuristic(guess_feedbacks_array: np.ndarray,
     can_be_answer = np.isin(possible_guesses, possible_answers, assume_unique=True)
     return num_partitions, can_be_answer
 
+def basic_heuristic_ents(guess_feedbacks_array: np.ndarray,
+                         possible_guesses: np.ndarray[np.int16],
+                         possible_answers: np.ndarray[np.int16]
+                         ) -> tuple[np.ndarray, ...]:
+    ents = np.array([entropy(guess_feedbacks_array, guess_id, possible_answers)
+                     for guess_id in possible_guesses])
+    can_be_answer = np.isin(possible_guesses, possible_answers, assume_unique=True)
+    return ents, can_be_answer
+
+
+def bluebrown(ent):
+    # ent = 5.614710
+    # Assuming you can definitely get it in the next guess,
+    # this is the expected score
+    min_score = 2 ** (-ent) + 2 * (1 - 2 ** (-ent))
+
+    # To account for the likely uncertainty after the next guess,
+    # and knowing that entropy of 11.5 bits seems to have average
+    # score of 3.5, we add a line to account
+    # we add a line which connects (0, 0) to (3.5, 11.5)
+    return min_score + 1.5 * ent / 11.5
+
+def expected_score_from_remaining_entropy(rent):
+    # log2(16) = 4
+    # 2^-4 = 0.0625 = 1/16
+    p = 2 ** (-rent)
+    floor = p + (1 - p) * 2
+
+    return floor + 0.135474 * rent
+
 def basic_heuristic2(guess_feedbacks_array: np.ndarray,
                      possible_guesses: np.ndarray[np.int16],
                      possible_answers: np.ndarray[np.int16]
@@ -133,10 +163,19 @@ def basic_heuristic2(guess_feedbacks_array: np.ndarray,
 
     remaining_entropy = np.log2(possible_answers.size)
     p = (1 / possible_answers.size) * can_be_answer
-    remaining_guesses = 1.169384 + 0.250664 * (remaining_entropy - ents)
+    # remaining_guesses = 1.149569 + 0.247628 * (remaining_entropy - ents)
+    # remaining_guesses = bluebrown(remaining_entropy - ents)
+    # next_remaining_entropy = remaining_entropy - ents
+    # remaining_guesses = 1.127971 + 0.568010 * np.log2(next_remaining_entropy,
+    #                                                   out=np.zeros_like(next_remaining_entropy),
+    #                                                   where=(next_remaining_entropy > 0))
+    # remaining_guesses = np.exp(0.130605 + 0.135474 * (remaining_entropy - ents))
+    remaining_guesses = expected_score_from_remaining_entropy(remaining_entropy - ents)
     exp_guesses = p + (1 - p) * (1 + remaining_guesses)
 
     # print(remaining_entropy, ents.max(), exp_guesses.min())
     return -exp_guesses, can_be_answer
+
+
 
 

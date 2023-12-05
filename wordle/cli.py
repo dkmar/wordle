@@ -87,9 +87,11 @@ def solve(answer: str, starting_word: str, solver: WordleSolver) -> dict[str]:
 @click.option("-v", "verbose", is_flag=True)
 @click.option("-h", "hard_mode", is_flag=True)
 @click.option("-o", "optimal", is_flag=True)
-def bench(n: int, starting_word: str, verbose:  bool, hard_mode: bool, optimal: bool):
-    from wordle.solverfinal import read_words_from_file, ALL_HIDDEN_ANSWERS_PATH
-    answers = read_words_from_file(ALL_HIDDEN_ANSWERS_PATH)
+@click.option("--against-original-answers", "against_original_answers", is_flag=True)
+def bench(n: int, starting_word: str, verbose:  bool, hard_mode: bool, optimal: bool, against_original_answers: bool):
+    from wordle.solverfinal import read_words_from_file, ALL_HIDDEN_ANSWERS_PATH, ORIGINAL_HIDDEN_ANSWERS_PATH
+    answers_path = ORIGINAL_HIDDEN_ANSWERS_PATH if against_original_answers else ALL_HIDDEN_ANSWERS_PATH
+    answers = read_words_from_file(answers_path)
     if n:
         answers = answers[:n]
 
@@ -97,7 +99,7 @@ def bench(n: int, starting_word: str, verbose:  bool, hard_mode: bool, optimal: 
     total_rounds_needed = 0
     count_failed = 0
 
-    solver = WordleSolver(hard_mode)
+    solver = WordleSolver(hard_mode, against_original_answers)
 
     if optimal:
         click.echo('Building optimal tree... ', nl=False)

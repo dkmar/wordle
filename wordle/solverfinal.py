@@ -182,7 +182,7 @@ class WordleSolver:
             return curr.guess
 
         game = self.game
-        keys = heuristics.basic_heuristic2(self.guess_feedbacks_array, game.possible_guesses, game.possible_answers)
+        keys = heuristics.basic_heuristic(self.guess_feedbacks_array, game.possible_guesses, game.possible_answers)
         i = lexmax(*keys)
         # print('\n', -keys[0][i], keys[1][i], '\n')
         guess_id = game.possible_guesses[i]
@@ -477,7 +477,35 @@ def print_entropy_remaining_guesses_data(starting_word = 'SLATE'):
             print(rent, guesses_remaining, alt_rent)
             guesses_remaining -= 1
 
-# print_entropy_remaining_guesses_data()
+def print_entropy_remaining_guesses_data_easy(starting_word = 'SLATE'):
+    solver = WordleSolver(hard_mode=False, use_original_answer_list=False)
+    # base = set(read_words_from_file(ORIGINAL_HIDDEN_ANSWERS_PATH))
+    # answers = set(read_words_from_file(ALL_HIDDEN_ANSWERS_PATH)) - base
+    answers = read_words_from_file(ALL_HIDDEN_ANSWERS_PATH)
+    for answer in answers:
+        solver.new_game(answer)
+        remaining_entropy = []
+        # alt = []
+
+        feedback = solver.play(starting_word)
+        rounds = 1
+        while feedback != '🟩🟩🟩🟩🟩':
+            rent = np.log2(solver.game.possible_answers.size)
+            remaining_entropy.append(rent)
+            # alt_rent = (rent - np.array([heuristics.entropy(solver.guess_feedbacks_array, gid, solver.game.possible_answers)
+            #                for gid in solver.game.possible_guesses])).mean()
+            # alt.append(alt_rent)
+
+            rounds += 1
+            guess = solver.best_guess()
+            feedback = solver.play(guess)
+
+        guesses_remaining = rounds - 1
+        for rent in remaining_entropy:
+            print(rent, guesses_remaining)
+            guesses_remaining -= 1
+
+# print_entropy_remaining_guesses_data_easy()
 # best_starts()
 # if __name__ == '__main__':
 # best_starts()
