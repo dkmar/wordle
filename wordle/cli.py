@@ -152,7 +152,7 @@ def explore(answers):
 
 @cli.command()
 def leaderboard():
-    solver = WordleSolver(hard_mode=True).with_optimal_tree(starting_word='SALET')
+    solver = WordleSolver(hard_mode=True, use_original_answer_list=True).with_optimal_tree(starting_word='SALET')
     tree = solver.solution_tree
 
     def find_path(answer: str) -> str:
@@ -164,7 +164,8 @@ def leaderboard():
 
         return ','.join(path)
 
-    original_answers = ANSWERS[:tree.answers_in_tree]
+    from wordle.solverfinal import read_words_from_file, ORIGINAL_HIDDEN_ANSWERS_PATH
+    original_answers = read_words_from_file(ORIGINAL_HIDDEN_ANSWERS_PATH)
     for ans in original_answers:
         click.echo(find_path(ans))
 

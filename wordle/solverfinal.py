@@ -1,3 +1,4 @@
+import dataclasses
 from dataclasses import dataclass
 from collections.abc import Callable, Mapping, Iterable
 from pathlib import Path
@@ -90,6 +91,13 @@ def get_index_for_words(words_file: Path, word_index: Mapping[str, int]) -> np.n
 
 @dataclass
 class Game:
+    """
+    What defines a game?
+    - The answer if we know it.
+    - The set of all legal guesses
+    - The set of all possible (probable, really) answers
+    - The guesses we've made thus far and their associated feedbacks.
+    """
     answer: str
     possible_guesses: np.ndarray[np.int16]
     possible_answers: np.ndarray[np.int16]
@@ -122,26 +130,29 @@ class WordleSolver:
 
         self.hard_mode = hard_mode
         self.optimal = False
-        self.solution_tree: Optional[SolutionTree] = None
+        self.solution_tree: Optional[SolutionTreeView] = None
         self.grade_guess = wordle.feedback.grade_guess
 
     def for_answer(self, answer: str):
         self.new_game(answer)
         return self
 
-    def with_optimal_tree(self, starting_word: str):
+    def with_optimal_tree(self, starting_word: str, read_cached: bool = False):
         self.optimal = True
 
-        import pickle
-        path = Path(f'wordle/data/{starting_word}_tree.pickle')
-        if path.exists():
-            with open(path, 'rb') as f:
-                self.solution_tree = pickle.load(f)
-        else:
-            self.solution_tree = self.map_solutions(starting_word, find_optimal=True)
-            with open(path, 'wb') as f:
-                pickle.dump(self.solution_tree, f)
-
+        # import pickle
+        # path = Path(f'wordle/data/{starting_word}_tree.pickle')
+        # if read_cached and path.exists():
+        #     with open(path, 'rb') as f:
+        #         self.solution_tree = pickle.load(f)
+        # else:
+        #     self.solution_tree = self.map_solutions(starting_word, find_optimal=True)
+        #     with open(path, 'wb') as f:
+        #         pickle.dump(self.solution_tree, f)
+        #
+        # return self
+        solution_tree = self.map_solutions(starting_word, find_optimal=True)
+        self.solution_tree = SolutionTreeView(self, solution_tree)
         return self
 
     def new_game(self, answer: str):
@@ -339,96 +350,241 @@ class WordleSolver:
             pool2 = np.argpartition(deep_key, -k2)[-k2:]
             return np.union1d(possible_guesses[pool1], top_ids[pool2])
 
-
     def map_solutions(self, starting_word: str = '', find_optimal: bool = False) -> SolutionTree:
         possible_guesses = self.game.possible_guesses
         possible_answers = self.game.possible_answers
-
         if starting_word:
             guess_id = self.word_index[starting_word]
-            if find_optimal:
-                return self._map_solutions_optimal({}, possible_guesses, possible_answers,
-                                                   guess_id, level=len(self.game.history))
-            else:
-                return self._map_solutions_greedy(possible_guesses, possible_answers, guess_id)
-        elif find_optimal:
-            return self._map_solutions_optimal({}, possible_guesses, possible_answers,
-                                               level=len(self.game.history))
+            return SolutionTreeBuilder(self).build_subtree(guess_id, possible_guesses, possible_answers,
+                                                           len(self.game.history))
         else:
-            return self._map_solutions_greedy(possible_guesses, possible_answers)
+            return SolutionTreeBuilder(self).map_solution_tree(possible_guesses, possible_answers,
+                                                               len(self.game.history))
+    # def map_solutions(self, starting_word: str = '', find_optimal: bool = False) -> SolutionTree:
+    #     possible_guesses = self.game.possible_guesses
+    #     possible_answers = self.game.possible_answers
+    #
+    #     if starting_word:
+    #         guess_id = self.word_index[starting_word]
+    #         if find_optimal:
+    #             return self._map_solutions_optimal({}, possible_guesses, possible_answers,
+    #                                                guess_id, level=len(self.game.history))
+    #         else:
+    #             return self._map_solutions_greedy(possible_guesses, possible_answers, guess_id)
+    #     elif find_optimal:
+    #         return self._map_solutions_optimal({}, possible_guesses, possible_answers,
+    #                                            level=len(self.game.history))
+    #     else:
+    #         return self._map_solutions_greedy(possible_guesses, possible_answers)
+    #
+    # def _map_solutions_greedy(self,
+    #                           possible_guesses: np.ndarray[np.int16],
+    #                           possible_answers: np.ndarray[np.int16],
+    #                           given_guess_id: int | None = None) -> SolutionTree:
+    #
+    #     if possible_answers.size == 1:
+    #         answer = self.words[possible_answers[0]]
+    #         return SolutionTree(answer, True)
+    #
+    #     guess_id = given_guess_id if (given_guess_id is not None) \
+    #         else self.best_guesses(possible_guesses, possible_answers, 1)
+    #     tree = SolutionTree(self.words[guess_id])
+    #
+    #     feedback_ids = np.unique(self.guess_feedbacks_array[guess_id, possible_answers])
+    #     for feedback_id in feedback_ids:
+    #         feedback = self.patterns[feedback_id]
+    #         if feedback == '🟩🟩🟩🟩🟩':
+    #             tree.is_answer = True
+    #         else:
+    #             next_possible_guesses = self.filter_words(possible_guesses, guess_id, feedback_id)
+    #             next_possible_answers = self.filter_words(possible_answers, guess_id, feedback_id)
+    #             tree[feedback] = self._map_solutions_greedy(next_possible_guesses, next_possible_answers)
+    #
+    #     return tree
+    #
+    # def _map_solutions_optimal(self,
+    #                            memo: dict,
+    #                            possible_guesses: np.ndarray[np.int16],
+    #                            possible_answers: np.ndarray[np.int16],
+    #                            given_guess_id: int | None = None,
+    #                            level: int = 0) -> SolutionTree:
+    #
+    #     if possible_answers.size == 1:
+    #         answer = self.words[possible_answers[0]]
+    #         return SolutionTree(answer, True, level)
+    #
+    #     # check cache. 3,862,686 cache hits lol
+    #     key = given_guess_id or (hash(possible_guesses.data.tobytes()),
+    #                              hash(possible_answers.data.tobytes()))
+    #     if entry := memo.get(key):
+    #         # cached entry for this config might have arrived here at a different (deeper?) depth
+    #         entry.level = level
+    #         return entry
+    #
+    #     best_tree = None
+    #     best_guess_ids = [given_guess_id] if given_guess_id is not None \
+    #         else self.best_guesses(possible_guesses, possible_answers, k=250, candidates_to_consider=500)
+    #     # else self._best_guesses(possible_guesses, possible_answers, self.pillar_aware_heuristic, 20)
+    #
+    #     for guess_id in best_guess_ids:
+    #         tree = SolutionTree(self.words[guess_id], level=level)
+    #
+    #         feedback_ids = np.bincount(self.guess_feedbacks_array[guess_id, possible_answers]).nonzero()[0]
+    #         for feedback_id in feedback_ids:
+    #             feedback = self.patterns[feedback_id]
+    #             if feedback == '🟩🟩🟩🟩🟩':
+    #                 tree.is_answer = True
+    #             else:
+    #                 next_possible_guesses = self.filter_words(possible_guesses, guess_id, feedback_id)
+    #                 next_possible_answers = self.filter_words(possible_answers, guess_id, feedback_id)
+    #                 tree[feedback] = self._map_solutions_optimal(memo, next_possible_guesses, next_possible_answers,
+    #                                                              level=level + 1)
+    #
+    #         # if tree.guess == 'CRYER' and tree.level == 2 and tree.answers_in_tree > 20:
+    #         #     print()
+    #         if best_tree is None or tree.cmp_key < best_tree.cmp_key:
+    #             # if tree.guess in ['MICRO', 'CRUMP'] and tree.answers_in_tree == 221:
+    #             #     breakpoint()
+    #             best_tree = tree
+    #
+    #     memo[key] = best_tree
+    #     return best_tree
+    #
+    # def _map_solutions_optimal_ez(self,
+    #                               memo: dict,
+    #                               possible_guesses: np.ndarray[np.int16],
+    #                               possible_answers: np.ndarray[np.int16],
+    #                               given_guess_id: int | None = None,
+    #                               level: int = 0) -> SolutionTree:
+    #
+    #     if possible_answers.size == 1:
+    #         answer = self.words[possible_answers[0]]
+    #         return SolutionTree(answer, True, level)
+    #
+    #     # check cache. 3,862,686 cache hits lol
+    #     key = given_guess_id or hash(possible_answers.data.tobytes())
+    #     if entry := memo.get(key):
+    #         # cached entry for this config might have arrived here at a different (deeper?) depth
+    #         entry.level = level
+    #         return entry
+    #
+    #     best_tree = None
+    #     best_guess_ids = [given_guess_id] if given_guess_id is not None \
+    #                      else self.best_guesses(possible_guesses, possible_answers, k=50, candidates_to_consider=100)
+    #     # else self._best_guesses(possible_guesses, possible_answers, self.pillar_aware_heuristic, 20)
+    #
+    #     for guess_id in best_guess_ids:
+    #         tree = SolutionTree(self.words[guess_id], level=level)
+    #
+    #         feedback_ids = np.bincount(self.guess_feedbacks_array[guess_id, possible_answers]).nonzero()[0]
+    #         for feedback_id in feedback_ids:
+    #             feedback = self.patterns[feedback_id]
+    #             if feedback == '🟩🟩🟩🟩🟩':
+    #                 tree.is_answer = True
+    #             else:
+    #                 next_possible_guesses = possible_guesses
+    #                 next_possible_answers = self.filter_words(possible_answers, guess_id, feedback_id)
+    #                 tree[feedback] = self._map_solutions_optimal(memo, next_possible_guesses, next_possible_answers,
+    #                                                              level=level + 1)
+    #
+    #         # if tree.guess == 'CRYER' and tree.level == 2 and tree.answers_in_tree > 20:
+    #         #     print()
+    #         if best_tree is None or tree.cmp_key < best_tree.cmp_key:
+    #             # if tree.guess in ['MICRO', 'CRUMP'] and tree.answers_in_tree == 221:
+    #             #     breakpoint()
+    #             best_tree = tree
+    #
+    #     memo[key] = best_tree
+    #     return best_tree
 
-    def _map_solutions_greedy(self,
-                              possible_guesses: np.ndarray[np.int16],
-                              possible_answers: np.ndarray[np.int16],
-                              given_guess_id: int | None = None) -> SolutionTree:
+@dataclasses.dataclass(slots=True)
+class SolutionTreeBuilder:
+    solver: WordleSolver
+    memo: dict
+    answer_match: int
 
-        if possible_answers.size == 1:
-            answer = self.words[possible_answers[0]]
-            return SolutionTree(answer, True)
+    def __init__(self, solver: WordleSolver):
+        self.solver = solver
+        self.memo = {}
+        self.answer_match = solver.pattern_index['🟩🟩🟩🟩🟩']
 
-        guess_id = given_guess_id if (given_guess_id is not None) \
-            else self.best_guesses(possible_guesses, possible_answers, 1)
-        tree = SolutionTree(self.words[guess_id])
+    def build_subtree(self,
+                      guess_id: int,
+                      possible_guesses: np.ndarray[np.int16],
+                      possible_answers: np.ndarray[np.int16],
+                      level: int = 0) -> SolutionTree:
 
-        feedback_ids = np.unique(self.guess_feedbacks_array[guess_id, possible_answers])
+        solver = self.solver
+        tree = SolutionTree(guess_id, level=level)
+        feedback_ids = np.bincount(solver.guess_feedbacks_array[guess_id, possible_answers]).nonzero()[0]
+        answer_match_id = self.answer_match
         for feedback_id in feedback_ids:
-            feedback = self.patterns[feedback_id]
-            if feedback == '🟩🟩🟩🟩🟩':
+            if feedback_id == answer_match_id:
                 tree.is_answer = True
             else:
-                next_possible_guesses = self.filter_words(possible_guesses, guess_id, feedback_id)
-                next_possible_answers = self.filter_words(possible_answers, guess_id, feedback_id)
-                tree[feedback] = self._map_solutions_greedy(next_possible_guesses, next_possible_answers)
+                next_possible_guesses = solver.filter_words(possible_guesses, guess_id, feedback_id)
+                next_possible_answers = solver.filter_words(possible_answers, guess_id, feedback_id)
+                tree[feedback_id] = self.map_solution_tree(next_possible_guesses,
+                                                           next_possible_answers,
+                                                           level + 1)
 
         return tree
 
-    def _map_solutions_optimal(self,
-                               memo: dict,
-                               possible_guesses: np.ndarray[np.int16],
-                               possible_answers: np.ndarray[np.int16],
-                               given_guess_id: int | None = None,
-                               level: int = 0) -> SolutionTree:
+    def map_solution_tree(self,
+                          possible_guesses: np.ndarray[np.int16],
+                          possible_answers: np.ndarray[np.int16],
+                          level: int = 0) -> SolutionTree:
+        """
+        Node depth = node level (root to node) + node height (node to deepest leaf)
+        Args:
+            guess_feedbacks_array:
+            memo:
+            possible_guesses:
+            possible_answers:
+            level:
 
+        Returns:
+
+        """
+        # assert level <= 10
         if possible_answers.size == 1:
-            answer = self.words[possible_answers[0]]
-            return SolutionTree(answer, True, level)
+            return SolutionTree(possible_answers[0], True, level)
 
+        solver, memo = self.solver, self.memo
         # check cache. 3,862,686 cache hits lol
-        key = given_guess_id or (hash(possible_guesses.data.tobytes()),
-                                 hash(possible_answers.data.tobytes()))
+        key = (hash(possible_guesses.data.tobytes()), hash(possible_answers.data.tobytes()))
         if entry := memo.get(key):
             # cached entry for this config might have arrived here at a different (deeper?) depth
-            entry.level = level
+            if entry.level != level:
+                entry.update_level(level)
             return entry
 
         best_tree = None
-        best_guess_ids = [given_guess_id] if given_guess_id is not None \
-            else self.best_guesses(possible_guesses, possible_answers, k=30)
-        # else self._best_guesses(possible_guesses, possible_answers, self.pillar_aware_heuristic, 20)
-
+        best_guess_ids = solver.best_guesses(possible_guesses, possible_answers, k=30, candidates_to_consider=60)
         for guess_id in best_guess_ids:
-            tree = SolutionTree(self.words[guess_id], level=level)
-
-            feedback_ids = np.bincount(self.guess_feedbacks_array[guess_id, possible_answers]).nonzero()[0]
-            for feedback_id in feedback_ids:
-                feedback = self.patterns[feedback_id]
-                if feedback == '🟩🟩🟩🟩🟩':
-                    tree.is_answer = True
-                else:
-                    next_possible_guesses = self.filter_words(possible_guesses, guess_id, feedback_id)
-                    next_possible_answers = self.filter_words(possible_answers, guess_id, feedback_id)
-                    tree[feedback] = self._map_solutions_optimal(memo, next_possible_guesses, next_possible_answers,
-                                                                 level=level + 1)
-
-            # if tree.guess == 'CRYER' and tree.level == 2 and tree.answers_in_tree > 20:
-            #     print()
+            tree = self.build_subtree(guess_id, possible_guesses, possible_answers, level)
             if best_tree is None or tree.cmp_key < best_tree.cmp_key:
-                # if tree.guess in ['MICRO', 'CRUMP'] and tree.answers_in_tree == 221:
-                #     breakpoint()
                 best_tree = tree
 
         memo[key] = best_tree
         return best_tree
+
+
+class SolutionTreeView:
+    def __init__(self, solver: WordleSolver, tree: SolutionTree):
+        self.solver = solver
+        self.tree = tree
+
+    @property
+    def guess(self):
+        word_by_id = self.solver.words
+        return word_by_id[self.tree.guess_id]
+
+    def __getitem__(self, item):
+        pattern_index = self.solver.pattern_index
+        # if pattern_index[item] not in self.tree:
+        #     print()
+        return self.__class__(self.solver, self.tree[pattern_index[item]])
 
 
 def best_starts(write_file=False):
@@ -511,8 +667,9 @@ def print_entropy_remaining_guesses_data_easy(starting_word = 'SLATE'):
 # best_starts()
 # solver = WordleSolver(hard_mode=True).for_answer('BOXER')
 # tree_salet = solver.map_solutions('SALET', find_optimal=True)
-# solver.game.play('SALET')
-# tree = solver.map_solutions(find_optimal=True)
+# solver.play('SALET')
+# with open(f'tree_salet_NEW.txt', 'w') as out:
+#         out.write(tree_salet.as_str(solver.words, solver.patterns))
 # for guess in 'CRUMP', 'DRONY', 'MICRO':
 #     tree = solver.map_solutions(guess, find_optimal=True)
 #     cnts = tree.answer_depth_distribution

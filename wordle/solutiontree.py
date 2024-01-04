@@ -1,22 +1,22 @@
-
-
 '''
 For hard mode, being greedy gets punished and we need to actually look at the tree.
 '''
 from collections import deque, Counter
 from functools import cached_property
+import numpy as np
+
 # class SolutionTree(dict[str, 'SolutionTree']):
 # class SolutionTree(UserDict):
 class SolutionTree(dict[str, 'SolutionTree']):
-    def __init__(self, guess: str, is_answer: bool = False, level: int = 0):
+    def __init__(self, guess_id: int, is_answer: bool = False, level: int = 0):
         super().__init__()
-        self.guess = guess
-        self.is_answer = is_answer
-        self.level = level
+        self.guess_id = np.int16(guess_id)
+        self.is_answer = np.bool_(is_answer)
+        self.level = np.int8(level)
         self.cmp_fn = self.cmp_key_non_losing
 
     @property
-    def answer_depths(self) -> dict[str, int]:
+    def answer_depths(self) -> dict:
         q = deque([self])
         answer_depth = {}
         depth = 0
@@ -25,7 +25,7 @@ class SolutionTree(dict[str, 'SolutionTree']):
             for _ in range(len(q)):
                 tree = q.popleft()
                 if tree.is_answer:
-                    answer_depth[tree.guess] = depth
+                    answer_depth[tree.guess_id] = depth
                 q.extend(tree.values())
 
         return answer_depth
@@ -57,19 +57,9 @@ class SolutionTree(dict[str, 'SolutionTree']):
         best = max((1 + subtree.max_guess_depth for subtree in self.values()), default=0)
         return best or int(self.is_answer)
 
+    def update_level(self, new_level: int) -> None:
+        self.level = np.int8(new_level)
 
-        # avg depth, # failing? or max depth?, is_answer
-        # dd = self.answer_depth_distribution
-        # total_guesses = sum(depth * count
-        #                     for depth, count in dd.items())
-        # max_depth = max(dd.keys())
-        # return (total_guesses, max_depth, not self.is_answer)
-        # return (self.max_guess_depth , self.total_guesses, not self.is_answer)
-
-        # return not (self.level + self.max_guess_depth <= 6), self.total_guesses, not self.is_answer
-        # return (self.total_guesses, self.max_guess_depth, not self.is_answer)
-    # def cmp_key_worst_case(self) -> tuple[int, int, bool]:
-    #     return (self.max_guess_depth, self.total_guesses, not self.is_answer)
     @property
     def cmp_key(self):
         return self.cmp_fn()
@@ -82,11 +72,9 @@ class SolutionTree(dict[str, 'SolutionTree']):
     def cmp_key_non_losing(self):
         return not (self.level + self.max_guess_depth <= 6), self.total_guesses, not self.is_answer
 
-
-
     def __str__(self) -> str:
         # guess and number of guesses
-        base = f'{self.guess}{self.level+1} [{self.total_guesses} g, {self.total_guesses / self.answers_in_tree:.2f} avg]'
+        base = f'{self.guess_id}{self.level + 1} [{self.total_guesses} g, {self.total_guesses / self.answers_in_tree:.2f} avg]'
         sb = [base]
         # if not self.is_answer:
         #     text += " (not an answer)"
@@ -95,6 +83,15 @@ class SolutionTree(dict[str, 'SolutionTree']):
             sb.append(f"\n    - {key}: {lines}")
         return ''.join(sb)
 
-
+    def as_str(self, word_by_id: tuple, pattern_by_id: tuple) -> str:
+        # guess and number of guesses
+        base = f'{word_by_id[self.guess_id]}{self.level + 1} [{self.total_guesses} g, {self.total_guesses / self.answers_in_tree:.2f} avg]'
+        sb = [base]
+        # if not self.is_answer:
+        #     text += " (not an answer)"
+        for key, val in self.items():
+            lines = "\n    ".join(val.as_str(word_by_id, pattern_by_id).splitlines())
+            sb.append(f"\n    - {pattern_by_id[key]}: {lines}")
+        return ''.join(sb)
 
 
