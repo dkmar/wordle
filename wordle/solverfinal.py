@@ -11,7 +11,7 @@ import wordle.heuristics as heuristics
 from wordle.feedback import get_guess_feedbacks_array
 from wordle.lib import Pattern
 from wordle.solutiontree import SolutionTree
-from wordle.utils import lexmax
+from wordle.utils import lexmax, filter_possible_words
 
 ''' Gameplay (Hard Mode)
 1. Initial state has the target word.
@@ -174,9 +174,11 @@ class WordleSolver:
         guess_id = self.word_index[guess]
         feedback_id = self.pattern_index[feedback]
 
-        game.possible_answers = self.filter_words(game.possible_answers, guess_id, feedback_id)
+        game.possible_answers = filter_possible_words(context.guess_feedbacks_array, 
+                                                      game.possible_answers, guess_id, feedback_id)
         if self.hard_mode:
-            game.possible_guesses = self.filter_words(game.possible_guesses, guess_id, feedback_id)
+            game.possible_guesses = filter_possible_words(context.guess_feedbacks_array, 
+                                                          game.possible_guesses, guess_id, feedback_id)
 
         game.history[guess] = feedback
 
@@ -522,8 +524,10 @@ class SolutionTreeBuilder:
             if feedback_id == answer_match_id:
                 tree.is_answer = True
             else:
-                next_possible_guesses = solver.filter_words(possible_guesses, guess_id, feedback_id)
-                next_possible_answers = solver.filter_words(possible_answers, guess_id, feedback_id)
+                next_possible_guesses = filter_possible_words(context.guess_feedbacks_array, 
+                                                              possible_guesses, guess_id, feedback_id)
+                next_possible_answers = filter_possible_words(context.guess_feedbacks_array, 
+                                                              possible_answers, guess_id, feedback_id)
                 tree[feedback_id] = self.map_solution_tree(next_possible_guesses,
                                                            next_possible_answers,
                                                            level + 1)

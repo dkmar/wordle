@@ -37,3 +37,10 @@ def lexmax(*keys: np.ndarray) -> int:
     return candidates[0]
 
 
+def filter_possible_words(guess_feedbacks_array: np.ndarray,
+                          possible_words: np.ndarray[np.int16],
+                          guess_id: int, feedback_id: int) -> np.ndarray[np.int16]:
+    # current subset of answers
+    possible_feedbacks = guess_feedbacks_array[guess_id, possible_words]
+    next_possible_words = possible_words[possible_feedbacks == feedback_id]
+    return next_possible_words

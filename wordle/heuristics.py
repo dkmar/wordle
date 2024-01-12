@@ -1,16 +1,7 @@
 import numpy as np
 from wordle.lib import Pattern
-
+from wordle.utils import filter_possible_words
 _NUM_PATTERNS = len(Pattern.ALL_PATTERNS)
-
-
-def filter_possible_words(guess_feedbacks_array: np.ndarray,
-                          possible_words: np.ndarray[np.int16],
-                          guess_id: int, feedback_id: int) -> np.ndarray[np.int16]:
-    # current subset of answers
-    possible_feedbacks = guess_feedbacks_array[guess_id, possible_words]
-    next_possible_words = possible_words[possible_feedbacks == feedback_id]
-    return next_possible_words
 
 
 def get_feedback_distribution(guess_feedbacks_array: np.ndarray,
