@@ -5,9 +5,7 @@ from collections import deque, Counter
 from functools import cached_property
 import numpy as np
 
-# class SolutionTree(dict[str, 'SolutionTree']):
-# class SolutionTree(UserDict):
-class SolutionTree(dict[str, 'SolutionTree']):
+class SolutionTree(dict[int, 'SolutionTree']):
     def __init__(self, guess_id: int, is_answer: bool = False, level: int = 0):
         super().__init__()
         self.guess_id = np.int16(guess_id)
