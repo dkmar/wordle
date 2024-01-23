@@ -119,7 +119,8 @@ def bench(n: int, starting_word: str, verbose:  bool, hard_mode: bool, optimal: 
                            item_show_func=print_info) as solution_info:
         for i, ans, result in solution_info:
             rnds = len(result)
-            total_rounds_needed += rnds
+            # TrackVol said for accurate averages counting, we should count all failures as just 7.
+            total_rounds_needed += min(rnds, 7)
             if rnds > 6:
                 count_failed += 1
                 print('\n', result[starting_word], ans, result, '\n')
