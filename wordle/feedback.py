@@ -43,14 +43,17 @@ def grade_guess(guess: str, answer: str) -> str:
 
     return ''.join(feedback)
 
-# TODO resolve the np.uint8 vs int typing
-def feedbacks_for_guess(guess: str, answers: tuple[str], pattern_id: Mapping[str, np.uint8]) -> tuple[np.uint8]:
-    return tuple(pattern_id[grade_guess(guess, answer)] for answer in answers)
+
+def feedbacks_for_guess(guess: str, answers: Iterable[str], pattern_id: Mapping[str, int]) -> tuple[int, ...]:
+    return tuple(
+        pattern_id[grade_guess(guess, answer)]
+        for answer in answers
+    )
 
 
-def compute_guess_feedbacks_array(guesses: tuple[str, ...],
-                                  answers: tuple[str, ...],
-                                  pattern_index: Mapping[str, np.uint8]) -> np.ndarray[np.ndarray[np.uint8]]:
+def compute_guess_feedbacks_array(guesses: Sequence[str],
+                                  answers: Sequence[str],
+                                  pattern_index: Mapping[str, int]) -> np.ndarray:
     # FeedbackType = np.dtype((np.uint8, len(answers)))
     compute_feedbacks_for_guess = partial(feedbacks_for_guess, answers=answers, pattern_id=pattern_index)
     num_workers = cpu_count() or 1
@@ -64,10 +67,10 @@ def compute_guess_feedbacks_array(guesses: tuple[str, ...],
         )
 
 
-def get_guess_feedbacks_array(guesses: tuple[str, ...],
-                              answers: tuple[str, ...],
+def get_guess_feedbacks_array(guesses: Sequence[str],
+                              answers: Sequence[str],
                               pattern_index: Mapping[str, int],
-                              file_path) -> np.ndarray[np.ndarray[np.uint8]]:
+                              file_path: Path) -> np.ndarray:
     try:
         guess_feedbacks_array = np.load(file_path)
     except (OSError, ValueError) as e:
@@ -75,4 +78,3 @@ def get_guess_feedbacks_array(guesses: tuple[str, ...],
         np.save(file_path, guess_feedbacks_array)
 
     return guess_feedbacks_array
-
