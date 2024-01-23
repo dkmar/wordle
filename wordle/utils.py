@@ -1,4 +1,6 @@
 import numpy as np
+from wordle.types import WordIndexArray
+
 
 def feedback_inverted_index(feedbacks, feedback_counts):
     # feedbacks = self.guess_feedbacks_array[guess_id]
@@ -38,8 +40,8 @@ def lexmax(*keys: np.ndarray) -> int:
 
 
 def filter_possible_words(guess_feedbacks_array: np.ndarray,
-                          possible_words: np.ndarray[np.int16],
-                          guess_id: int, feedback_id: int) -> np.ndarray[np.int16]:
+                          possible_words: WordIndexArray,
+                          guess_id: int, feedback_id: int) -> WordIndexArray:
     # current subset of answers
     possible_feedbacks = guess_feedbacks_array[guess_id, possible_words]
     next_possible_words = possible_words[possible_feedbacks == feedback_id]

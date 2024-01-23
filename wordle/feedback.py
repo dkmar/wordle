@@ -1,8 +1,11 @@
+from collections.abc import Iterable, Sequence
 from concurrent.futures import ProcessPoolExecutor
 from typing import Mapping
 from os import cpu_count
 from math import ceil
 from functools import partial
+from pathlib import Path
+from wordle.types import FeedbackIndexType
 import numpy as np
 
 
@@ -56,7 +59,7 @@ def compute_guess_feedbacks_array(guesses: tuple[str, ...],
         chunk_size = ceil(len(guesses) / num_workers)
         return np.fromiter(
             executor.map(compute_feedbacks_for_guess, guesses, chunksize=chunk_size),
-            dtype=(np.uint8, len(answers)),
+            dtype=(FeedbackIndexType, len(answers)),
             count=len(guesses)
         )
 

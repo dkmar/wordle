@@ -1,3 +1,5 @@
+from collections.abc import Callable, Mapping, Iterable, Sequence
+from typing import Optional, Any
 from dataclasses import dataclass
 from collections.abc import Callable, Mapping, Iterable, Sequence
 from pathlib import Path
@@ -9,6 +11,7 @@ import wordle.feedback
 import wordle.heuristics as heuristics
 from wordle.feedback import get_guess_feedbacks_array
 from wordle.lib import Pattern
+from wordle.types import WordIndexArray, WordIndexType, FeedbackIndexType
 from wordle.solutiontree import SolutionTree
 from wordle.utils import lexmax, filter_possible_words
 
@@ -82,10 +85,10 @@ def get_word_frequencies(word_index: Mapping[str, int]) -> np.ndarray:
         return np.array(freqs)
 
 
-def get_index_for_words(words_file: Path, word_index: Mapping[str, int]) -> np.ndarray[np.int16]:
+def get_index_for_words(words_file: Path, word_index: Mapping[str, int]) -> WordIndexArray:
     words = read_words_from_file(words_file)
     return np.array([word_index[word]
-                     for word in words if word in word_index], dtype=np.int16)
+                     for word in words if word in word_index], dtype=WordIndexType)
 
 
 @dataclass(slots=True)
@@ -95,7 +98,7 @@ class WordleContext:
     word_frequency: np.ndarray
     patterns: Sequence[str]
     pattern_index: Mapping[str, int]
-    pillars_of_doom: np.ndarray
+    pillars_of_doom: WordIndexArray
     guess_feedbacks_array: np.ndarray
 
 
@@ -109,30 +112,14 @@ class Game:
     - The guesses we've made thus far and their associated feedbacks.
     """
     answer: str
-    possible_guesses: np.ndarray[np.int16]
-    possible_answers: np.ndarray[np.int16]
+    possible_guesses: WordIndexArray
+    possible_answers: WordIndexArray
     history: dict[str, str]
 
 
 class WordleSolver:
-    def __init__(self,
-                 hard_mode: bool = False,
-                 use_original_answer_list: bool = False):
-        words = tuple(read_words_from_file(ALLOWED_WORDS_PATH))
-        word_index = {guess: i
-                      for i, guess in enumerate(words)}
-        word_frequency = get_word_frequencies(word_index)
-        pillars_of_doom = get_index_for_words(PILLARS_OF_DOOM_PATH, word_index)
-        patterns = Pattern.ALL_PATTERNS
-        pattern_index = {pattern: i
-                         for i, pattern in enumerate(patterns)}
-        guess_feedbacks_array = get_guess_feedbacks_array(words, words, pattern_index,
-                                                          GUESS_FEEDBACKS_PATH)
-        self.context = WordleContext(
-            words, word_index, word_frequency,
-            patterns, pattern_index, pillars_of_doom,
-            guess_feedbacks_array
-        )
+    def __init__(self, context: WordleContext, hard_mode: bool = False):
+        self.context = context
 
         self.possible_guesses = np.arange(len(words), dtype=np.int16)
         self.possible_answers = get_index_for_words(
@@ -259,8 +246,8 @@ class WordleSolver:
         return [guess_info for guess_info in info]
 
     def _best_guesses(self,
-                      possible_guesses: np.ndarray[np.int16],
-                      possible_answers: np.ndarray[np.int16],
+                      possible_guesses: WordIndexArray,
+                      possible_answers: WordIndexArray,
                       k: int = 20
                       ) -> np.ndarray:
         ctx = self.context
@@ -286,8 +273,8 @@ class WordleSolver:
 
 
     def best_guesses(self,
-                     possible_guesses: np.ndarray[np.int16],
-                     possible_answers: np.ndarray[np.int16],
+                     possible_guesses: WordIndexArray,
+                     possible_answers: WordIndexArray,
                      k: int = 30,
                      candidates_to_consider: int = 60) -> np.ndarray:
         # early exit if already < k
@@ -355,8 +342,8 @@ class SolutionTreeBuilder:
 
     def build_subtree(self,
                       guess_id: int,
-                      possible_guesses: np.ndarray[np.int16],
-                      possible_answers: np.ndarray[np.int16],
+                      possible_guesses: WordIndexArray,
+                      possible_answers: WordIndexArray,
                       level: int = 0) -> SolutionTree:
 
         context = self.context
@@ -378,8 +365,8 @@ class SolutionTreeBuilder:
         return tree
 
     def map_solution_tree(self,
-                          possible_guesses: np.ndarray[np.int16],
-                          possible_answers: np.ndarray[np.int16],
+                          possible_guesses: WordIndexArray,
+                          possible_answers: WordIndexArray,
                           level: int = 0) -> SolutionTree:
         """
         Node depth = node level (root to node) + node height (node to deepest leaf)

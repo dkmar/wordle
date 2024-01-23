@@ -1,18 +1,19 @@
 import numpy as np
 from wordle.lib import Pattern
+from wordle.types import WordIndexArray
 from wordle.utils import filter_possible_words
 _NUM_PATTERNS = len(Pattern.ALL_PATTERNS)
 
 
 def get_feedback_distribution(guess_feedbacks_array: np.ndarray,
                               guess_id: int,
-                              possible_answers: np.ndarray[np.int16]) -> np.ndarray:
+                              possible_answers: WordIndexArray) -> np.ndarray:
     possible_feedbacks = guess_feedbacks_array[guess_id, possible_answers]
     return np.bincount(possible_feedbacks, minlength=_NUM_PATTERNS)
 
 
 def entropy(guess_feedbacks_array: np.ndarray, guess_id: int,
-            possible_answers: np.ndarray[np.int16]) -> np.float64:
+            possible_answers: WordIndexArray) -> np.float64:
     feedbacks = guess_feedbacks_array[guess_id, possible_answers]
 
     # patterns, num_answers_for_patterns = np.unique(feedbacks, return_counts=True)
@@ -25,7 +26,7 @@ def entropy(guess_feedbacks_array: np.ndarray, guess_id: int,
 
 
 def entropy_level2(guess_feedbacks_array: np.ndarray, guess_id: int,
-                   possible_guesses: np.ndarray[np.int16], possible_answers: np.ndarray[np.int16]) -> float:
+                   possible_guesses: WordIndexArray, possible_answers: WordIndexArray) -> float:
     feedbacks = guess_feedbacks_array[guess_id, possible_answers]
     bins = np.bincount(feedbacks, minlength=_NUM_PATTERNS)
     unique_feedbacks = bins.nonzero()[0]
@@ -44,7 +45,7 @@ def entropy_level2(guess_feedbacks_array: np.ndarray, guess_id: int,
     return p.dot(np.array(entropies))
 
 
-def partitions(guess_feedbacks_array: np.ndarray, guess_id: int, possible_answers: np.ndarray[np.int16]) -> int:
+def partitions(guess_feedbacks_array: np.ndarray, guess_id: int, possible_answers: WordIndexArray) -> int:
     # partitions
     feedbacks = guess_feedbacks_array[guess_id, possible_answers]
     bins = np.bincount(feedbacks, minlength=_NUM_PATTERNS)
@@ -52,7 +53,7 @@ def partitions(guess_feedbacks_array: np.ndarray, guess_id: int, possible_answer
 
 
 def partitions_and_max(guess_feedbacks_array: np.ndarray, guess_id: int,
-                       possible_answers: np.ndarray[np.int16]) -> tuple[int, int]:
+                       possible_answers: WordIndexArray) -> tuple[int, int]:
     # partitions
     feedbacks = guess_feedbacks_array[guess_id, possible_answers]
     bins = np.bincount(feedbacks, minlength=_NUM_PATTERNS)
@@ -61,7 +62,7 @@ def partitions_and_max(guess_feedbacks_array: np.ndarray, guess_id: int,
 
 
 def partitions_level2(guess_feedbacks_array: np.ndarray, guess_id: int,
-                      possible_guesses: np.ndarray[np.int16], possible_answers: np.ndarray[np.int16]) -> float:
+                      possible_guesses: WordIndexArray, possible_answers: WordIndexArray) -> float:
     feedbacks = guess_feedbacks_array[guess_id, possible_answers]
     bins = np.bincount(feedbacks, minlength=_NUM_PATTERNS)
     possible_feedbacks = bins.nonzero()[0]
@@ -82,9 +83,9 @@ def partitions_level2(guess_feedbacks_array: np.ndarray, guess_id: int,
 
 
 def pillar_aware_heuristic(guess_feedbacks_array: np.ndarray,
-                           pillars_of_doom: np.ndarray[np.int16],
-                           possible_guesses: np.ndarray[np.int16],
-                           possible_answers: np.ndarray[np.int16]
+                           pillars_of_doom: WordIndexArray,
+                           possible_guesses: WordIndexArray,
+                           possible_answers: WordIndexArray
                            ) -> tuple[np.ndarray, ...]:
     num_partitions = np.array([partitions(guess_feedbacks_array, guess_id, possible_answers)
                                for guess_id in possible_guesses])
@@ -106,8 +107,8 @@ def pillar_aware_heuristic(guess_feedbacks_array: np.ndarray,
 
 
 def basic_heuristic(guess_feedbacks_array: np.ndarray,
-                    possible_guesses: np.ndarray[np.int16],
-                    possible_answers: np.ndarray[np.int16]
+                    possible_guesses: WordIndexArray,
+                    possible_answers: WordIndexArray
                     ) -> tuple[np.ndarray, ...]:
     num_partitions = np.array([partitions(guess_feedbacks_array, guess_id, possible_answers)
                                for guess_id in possible_guesses])
@@ -115,8 +116,8 @@ def basic_heuristic(guess_feedbacks_array: np.ndarray,
     return num_partitions, can_be_answer
 
 def basic_heuristic_ents(guess_feedbacks_array: np.ndarray,
-                         possible_guesses: np.ndarray[np.int16],
-                         possible_answers: np.ndarray[np.int16]
+                         possible_guesses: WordIndexArray,
+                         possible_answers: WordIndexArray
                          ) -> tuple[np.ndarray, ...]:
     ents = np.array([entropy(guess_feedbacks_array, guess_id, possible_answers)
                      for guess_id in possible_guesses])
@@ -145,8 +146,8 @@ def expected_score_from_remaining_entropy(rent):
     return floor + 0.135474 * rent
 
 def basic_heuristic2(guess_feedbacks_array: np.ndarray,
-                     possible_guesses: np.ndarray[np.int16],
-                     possible_answers: np.ndarray[np.int16]
+                     possible_guesses: WordIndexArray,
+                     possible_answers: WordIndexArray
                     ) -> tuple[np.ndarray, ...]:
     ents = np.array([entropy(guess_feedbacks_array, guess_id, possible_answers)
                      for guess_id in possible_guesses])

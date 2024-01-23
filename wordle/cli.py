@@ -8,7 +8,7 @@ import numpy as np
 # import wordle.evaluation as evaluation
 from wordle.lib import Pattern
 # from wordle.solver import Wordle, Game
-from wordle.solverfinal import WordleSolver
+from wordle.solverfinal import WordleContext, WordleSolver
 # if __name__ == '__main__':
 #     import wordle.evaluation as evaluation
 #     from wordle.evaluation import GUESSES, guess_index, get_possible_words, best_guess, guess_feedbacks_array, refine_wordset
@@ -99,7 +99,10 @@ def bench(n: int, starting_word: str, verbose:  bool, hard_mode: bool, optimal: 
     total_rounds_needed = 0
     count_failed = 0
 
-    solver = WordleSolver(hard_mode, against_original_answers)
+    solver = WordleSolver(
+        WordleContext(against_original_answers),
+        hard_mode
+    )
 
     if optimal:
         click.echo('Building optimal tree... ', nl=False)
@@ -152,7 +155,10 @@ def explore(answers):
 
 @cli.command()
 def leaderboard():
-    solver = WordleSolver(hard_mode=True, use_original_answer_list=True).with_optimal_tree(starting_word='SALET')
+    solver = WordleSolver(
+        WordleContext(using_original_answer_set=True),
+        hard_mode=True
+    ).with_optimal_tree(starting_word='SALET')
     tree = solver.solution_tree
 
     def find_path(answer: str) -> str:

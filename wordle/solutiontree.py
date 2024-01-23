@@ -3,12 +3,13 @@ For hard mode, being greedy gets punished and we need to actually look at the tr
 '''
 from collections import deque, Counter
 from functools import cached_property
+from wordle.types import WordIndexType, FeedbackIndexType
 import numpy as np
 
 class SolutionTree(dict[int, 'SolutionTree']):
     def __init__(self, guess_id: int, is_answer: bool = False, level: int = 0):
         super().__init__()
-        self.guess_id = np.int16(guess_id)
+        self.guess_id = WordIndexType(guess_id)
         self.is_answer = np.bool_(is_answer)
         self.level = np.int8(level)
         self.cmp_fn = self.cmp_key_non_losing
