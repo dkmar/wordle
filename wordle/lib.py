@@ -4,6 +4,7 @@ from itertools import product
 
 
 class Pattern:
+    SQUARES = '⬛🟨🟩'
     ALL_PATTERNS = tuple(map(''.join, product('⬛🟨🟩', repeat=5)))
 
     _trans_table_str_to_pattern = str.maketrans(
@@ -21,7 +22,15 @@ class Pattern:
         [YM]  🟨
         [GC]  🟩
         """
-        return s.translate(Pattern._trans_table_str_to_pattern)
+        if len(s) != 5:
+            raise ValueError
+
+        res = s.translate(Pattern._trans_table_str_to_pattern)
+        if any(ch not in Pattern.SQUARES for ch in res):
+            raise ValueError
+
+        return res
+
 
     @staticmethod
     def to_str(pat: str):

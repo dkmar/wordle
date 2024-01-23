@@ -1,19 +1,10 @@
 import functools
-
 import click
 import itertools
-
 import numpy as np
-
-# import wordle.evaluation as evaluation
 from wordle.lib import Pattern
-# from wordle.solver import Wordle, Game
 from wordle.solverfinal import WordleContext, WordleSolver
-# if __name__ == '__main__':
-#     import wordle.evaluation as evaluation
-#     from wordle.evaluation import GUESSES, guess_index, get_possible_words, best_guess, guess_feedbacks_array, refine_wordset
-# from wordle.evaluation import GUESSES, guess_index, get_possible_words, best_guess, guess_feedbacks_array, \
-#         refine_wordset
+
 
 @click.group()
 @click.version_option()
@@ -24,31 +15,73 @@ def cli():
 @cli.command()
 @click.argument("answer", type=str, required=False)
 @click.option("-h", "hard_mode", is_flag=True)
-def play(answer: str | None, hard_mode: bool):
-    "Play a game interactively."
+@click.option("--debug", "debug", is_flag=True)
+def play(answer: str | None, hard_mode: bool, debug: bool):
+    """ Play a game interactively. """
     # if answer not in ANSWERS:
     #     click.echo('Given answer is not in answer set.')
     #     return
 
-    solver = WordleSolver(hard_mode).for_answer(answer)
+    ctx = WordleContext()
+    solver = WordleSolver(ctx, hard_mode)
     game = solver.game
+
+    if not debug:
+        click.echo('Key:')
+        click.echo('   #) Guess:  Expected Score | Expected Information | Possible Answer?\n')
 
     for round_number in itertools.count(1):
         remaining = len(game.possible_answers)
+        # if remaining == 0:
+        #     click.echo('Error: 0 possible answers.')
+        #     break
         click.echo(f'Round {round_number}')
         click.echo(f'# possible answers: {remaining}')
-        click.echo(f'Remaining Entropy: {np.log2(game.possible_answers.size)}')
+        if debug:
+            click.echo(f'Remaining Entropy: {np.log2(game.possible_answers.size):.2f}')
+        click.echo('-'*24)
 
-        for i, (guess, score, entropy, parts, max_part_size, pillar_parts, freq, is_possible) in enumerate(solver.top_guesses_info(60), 1):
+        for i, info in enumerate(solver.top_guesses_info(20), 1):
+            (guess, score, entropy, parts, max_part_size, pillar_parts, freq, is_possible) = info
             possible_symbol = '✅' if is_possible else '❌'
             fb = solver.grade_guess(guess, answer) if answer else ''
-            click.echo(f'\t({i}) {guess}: {score:.1f} {entropy:.2f} {parts:>.2f} {max_part_size:>3d} {pillar_parts:>2d} {freq:>10.2f} {possible_symbol} {fb}')
+
+            if debug:
+                click.echo(
+                    '  {0:>2d}) {1}: {2:.1f} {3:.2f} {4:>.2f} {5:>3d} {6:>2d} {7:>8.2f} {8} {9}'.format(
+                        i, guess,
+                        score,
+                        entropy,
+                        parts, max_part_size,
+                        pillar_parts,
+                        freq,
+                        possible_symbol,
+                        fb
+                    )
+                )
+            else:
+                click.echo(
+                    '  {0:>2d}) {1}:  {2:.1f}  {3:.2f}  {4}'.format(
+                        i, guess,
+                        score,
+                        entropy,
+                        possible_symbol
+                    )
+                )
 
         click.echo()
-        guess = click.prompt('Guess').upper()
+        while (guess := click.prompt('Guess').upper()) not in ctx.word_index:
+            click.echo('Invalid guess. Please try again.')
+
         if answer is None:
-            feedback = click.prompt('Feedback').upper()
-            fb = Pattern.from_str(feedback)
+            while True:
+                feedback = click.prompt('Feedback').upper()
+                try:
+                    fb = Pattern.from_str(feedback)
+                    break
+                except ValueError:
+                    click.echo('Invalid feedback. Example: GGY_Y for 🟩🟩🟨⬛🟨')
+
             solver.play(guess, fb)
             click.echo(guess)
             click.echo(fb)
@@ -56,15 +89,14 @@ def play(answer: str | None, hard_mode: bool):
             fb = solver.play(guess)
             click.echo(guess)
             click.echo(fb)
-        print()
 
+        print()
         if fb == '🟩🟩🟩🟩🟩':
             print('----- SUCCESS ')
             for guess, feedback in game.history.items():
                 print(guess, feedback)
             break
-        # actual_entropy = evaluation.actual_info_from_guess(guess, fb, possible_words)
-        # click.echo(f'{fb} {actual_entropy} Bits')
+
 
 def solve(answer: str, starting_word: str, solver: WordleSolver) -> dict[str]:
     solver.new_game(answer)
@@ -112,7 +144,8 @@ def bench(n: int, starting_word: str, verbose:  bool, hard_mode: bool, optimal: 
     solve_game = functools.partial(solve, solver=solver, starting_word=starting_word.upper())
     game_results = map(solve_game, answers)
     items = zip(range(1, N+1), answers, game_results)
-    print_info = lambda item: f'[{item[0]}] {item[1]} {len(item[2])} {total_rounds_needed/item[0]:.2f}' if item else None
+    # returns None when item is None
+    print_info = lambda item: item and f'[{item[0]}] {item[1]} {len(item[2])} {total_rounds_needed/item[0]:.2f}'
 
     with click.progressbar(items,
                            length=N,

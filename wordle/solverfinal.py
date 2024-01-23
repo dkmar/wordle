@@ -216,7 +216,10 @@ class WordleSolver:
         ctx = self.context
         possible_guesses, possible_answers = game.possible_guesses, game.possible_answers
 
-        top_ids = self._best_guesses(possible_guesses, possible_answers, k=k)
+        # top_ids = self._best_guesses(possible_guesses, possible_answers, k=k)
+        top_ids = self.best_guesses(possible_guesses, possible_answers,
+                                    k=k, candidates_to_consider=2*k,
+                                    force_basic_heuristic=True)
 
         if self.hard_mode:
             keys = heuristics.pillar_aware_heuristic(ctx.guess_feedbacks_array, ctx.pillars_of_doom,
@@ -253,7 +256,7 @@ class WordleSolver:
         scaled_word_freqs = word_freqs / word_freqs.sum()
         # info = zip(top_guesses, keys[0][inds], ents, partitions, max_partition, pillar_partitions,
         #            scaled_word_freqs, can_be_answer)
-        info = zip(top_guesses, exp_score, ents, partitions, max_partition, pillar_partitions,
+        info = zip(top_guesses, exp_score, np.abs(ents), partitions, max_partition, pillar_partitions,
                    scaled_word_freqs, can_be_answer)
         return [guess_info for guess_info in info]
 
@@ -288,7 +291,8 @@ class WordleSolver:
                      possible_guesses: WordIndexArray,
                      possible_answers: WordIndexArray,
                      k: int = 30,
-                     candidates_to_consider: int = 60) -> np.ndarray:
+                     candidates_to_consider: int = 60,
+                     force_basic_heuristic: bool = False) -> np.ndarray:
         # early exit if already < k
         if possible_answers.size == 1:
             return possible_answers
@@ -296,7 +300,7 @@ class WordleSolver:
             return possible_guesses
 
         ctx = self.context
-        if not self.hard_mode:
+        if force_basic_heuristic or not self.hard_mode:
             keys = heuristics.basic_heuristic(ctx.guess_feedbacks_array, possible_guesses, possible_answers)
             if k == 1:
                 i = lexmax(*keys)
