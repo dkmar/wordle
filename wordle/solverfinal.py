@@ -1,12 +1,8 @@
 from collections.abc import Callable, Mapping, Iterable, Sequence
 from typing import Optional, Any
 from dataclasses import dataclass
-from collections.abc import Callable, Mapping, Iterable, Sequence
 from pathlib import Path
-from typing import Optional
-
 import numpy as np
-
 import wordle.feedback
 import wordle.heuristics as heuristics
 from wordle.feedback import get_guess_feedbacks_array
@@ -66,7 +62,7 @@ PILLARS_OF_DOOM_PATH = DATA_DIR / 'pillars_of_doom.txt'
 GUESS_FEEDBACKS_PATH = DATA_DIR / 'guess_feedbacks_array.npy'
 
 
-def read_words_from_file(words_file: Path) -> tuple[str]:
+def read_words_from_file(words_file: Path) -> tuple[str, ...]:
     with open(words_file, 'r') as f:
         words = map(str.strip, f)
         return tuple(map(str.upper, words))
@@ -100,6 +96,22 @@ class WordleContext:
     pattern_index: Mapping[str, int]
     pillars_of_doom: WordIndexArray
     guess_feedbacks_array: np.ndarray
+    using_original_answer_set: bool
+
+    def __init__(self, using_original_answer_set: bool = False):
+        self.words = read_words_from_file(ALLOWED_WORDS_PATH)
+        self.word_index = {guess: i
+                           for i, guess in enumerate(self.words)}
+        self.word_frequency = get_word_frequencies(self.word_index)
+        self.pillars_of_doom = get_index_for_words(PILLARS_OF_DOOM_PATH, self.word_index)
+        self.patterns = Pattern.ALL_PATTERNS
+        self.pattern_index = {pattern: i
+                              for i, pattern in enumerate(self.patterns)}
+        self.guess_feedbacks_array = get_guess_feedbacks_array(self.words, self.words,
+                                                               self.pattern_index,
+                                                               GUESS_FEEDBACKS_PATH)
+
+        self.using_original_answer_set = using_original_answer_set
 
 
 @dataclass
@@ -121,7 +133,7 @@ class WordleSolver:
     def __init__(self, context: WordleContext, hard_mode: bool = False):
         self.context = context
 
-        self.possible_guesses = np.arange(len(words), dtype=np.int16)
+        self.possible_guesses = np.arange(len(context.words), dtype=WordIndexType)
         self.possible_answers = get_index_for_words(
             ALL_HIDDEN_ANSWERS_PATH if not use_original_answer_list else ORIGINAL_HIDDEN_ANSWERS_PATH,
             word_index
@@ -170,10 +182,10 @@ class WordleSolver:
         guess_id = context.word_index[guess]
         feedback_id = context.pattern_index[feedback]
 
-        game.possible_answers = filter_possible_words(context.guess_feedbacks_array, 
+        game.possible_answers = filter_possible_words(context.guess_feedbacks_array,
                                                       game.possible_answers, guess_id, feedback_id)
         if self.hard_mode:
-            game.possible_guesses = filter_possible_words(context.guess_feedbacks_array, 
+            game.possible_guesses = filter_possible_words(context.guess_feedbacks_array,
                                                           game.possible_guesses, guess_id, feedback_id)
 
         game.history[guess] = feedback
@@ -190,7 +202,7 @@ class WordleSolver:
             return curr.guess
 
         game = self.game
-        keys = heuristics.basic_heuristic(self.context.guess_feedbacks_array, 
+        keys = heuristics.basic_heuristic(self.context.guess_feedbacks_array,
                                           game.possible_guesses, game.possible_answers)
         i = lexmax(*keys)
         guess_id = game.possible_guesses[i]
@@ -354,9 +366,9 @@ class SolutionTreeBuilder:
             if feedback_id == answer_match_id:
                 tree.is_answer = True
             else:
-                next_possible_guesses = filter_possible_words(context.guess_feedbacks_array, 
+                next_possible_guesses = filter_possible_words(context.guess_feedbacks_array,
                                                               possible_guesses, guess_id, feedback_id)
-                next_possible_answers = filter_possible_words(context.guess_feedbacks_array, 
+                next_possible_answers = filter_possible_words(context.guess_feedbacks_array,
                                                               possible_answers, guess_id, feedback_id)
                 tree[feedback_id] = self.map_solution_tree(next_possible_guesses,
                                                            next_possible_answers,
