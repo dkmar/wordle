@@ -145,7 +145,7 @@ def bench(n: int, starting_word: str, verbose:  bool, hard_mode: bool, optimal: 
     game_results = map(solve_game, answers)
     items = zip(range(1, N+1), answers, game_results)
     # returns None when item is None
-    print_info = lambda item: item and f'[{item[0]}] {item[1]} {len(item[2])} {total_rounds_needed/item[0]:.2f}'
+    print_info = lambda item: item and f'[{item[0]}] {item[1]} {len(item[2])} {(total_rounds_needed + min(len(item[2]), 7))/item[0]:.2f}'
 
     with click.progressbar(items,
                            length=N,
