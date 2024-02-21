@@ -1,4 +1,4 @@
-from .cli import cli
+from wordle.cli import cli
 
 if __name__ == "__main__":
     cli()
