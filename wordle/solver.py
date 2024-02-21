@@ -8,7 +8,7 @@ import wordle.heuristics as heuristics
 from wordle.feedback import get_guess_feedbacks_array
 from wordle.lib import Pattern
 from wordle.types import WordIndexArray, WordIndexType, FeedbackIndexType
-from wordle.solutiontree import SolutionTree
+from wordle.solutiontree import SolutionTree, PrioritizationPolicy
 from wordle.utils import lexmax, filter_possible_words
 
 ''' Gameplay (Hard Mode)
@@ -97,6 +97,7 @@ class WordleContext:
     pillars_of_doom: WordIndexArray
     guess_feedbacks_array: np.ndarray
     using_original_answer_set: bool
+    solve_policy: PrioritizationPolicy
 
     def __init__(self, using_original_answer_set: bool = False):
         self.words = read_words_from_file(ALLOWED_WORDS_PATH)
@@ -112,6 +113,7 @@ class WordleContext:
                                                                GUESS_FEEDBACKS_PATH)
 
         self.using_original_answer_set = using_original_answer_set
+        self.solve_policy = PrioritizationPolicy.MINIMIZE_AVERAGE
 
 
 @dataclass
@@ -356,6 +358,8 @@ class SolutionTreeBuilder:
         self.best_guesses = best_guesses_fn
         self.memo = {}
         self.answer_match = context.pattern_index['🟩🟩🟩🟩🟩']
+        SolutionTree.set_cmp_policy(context.solve_policy)
+
 
     def build_subtree(self,
                       guess_id: int,
@@ -414,7 +418,7 @@ class SolutionTreeBuilder:
         best_guess_ids = self.best_guesses(possible_guesses, possible_answers, k=30, candidates_to_consider=60)
         for guess_id in best_guess_ids:
             tree = self.build_subtree(guess_id, possible_guesses, possible_answers, level)
-            if best_tree is None or tree.cmp_key < best_tree.cmp_key:
+            if best_tree is None or tree < best_tree:
                 best_tree = tree
 
         memo[key] = best_tree

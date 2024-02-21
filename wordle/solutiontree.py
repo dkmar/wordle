@@ -2,17 +2,40 @@
 For hard mode, being greedy gets punished and we need to actually look at the tree.
 '''
 from collections import deque, Counter
+from enum import Enum
 from functools import cached_property
 from wordle.types import WordIndexType, FeedbackIndexType
 import numpy as np
 
+
+class PrioritizationPolicy(Enum):
+    # Minimize average # of guesses, even if it means losing some.
+    MINIMIZE_AVERAGE = 1
+    # Minimize number of losses, tie-break on average # of guesses
+    NON_LOSING = 2
+
+
 class SolutionTree(dict[int, 'SolutionTree']):
+    """
+    The purpose here is to enumerate the optimal guess tree like so:
+        SALET1 [8124 g, 3.51 avg]
+        - ⬛🟨⬛⬛🟩: AUDIT2 [48 g, 2.40 avg]
+            - 🟨⬛⬛⬛🟩: CHANT3 [11 g, 1.83 avg]
+                - ⬛⬛🟩⬛🟩: GRAFT4 [1 g, 1.00 avg]
+
+    The SolutionTree looks like this conceptually:
+        Tree<SALET>[⬛🟨⬛⬛🟩] -> Tree<AUDIT>
+
+    A SolutionTree is the tree of ~optimal~ guess paths from the current guess.
+    It has a mapping from possible guess feedbacks to the next tree.
+
+    Each tree can compute (and cache) important metadata on # of guesses and worst case.
+    """
     def __init__(self, guess_id: int, is_answer: bool = False, level: int = 0):
         super().__init__()
         self.guess_id = WordIndexType(guess_id)
         self.is_answer = np.bool_(is_answer)
         self.level = np.int8(level)
-        self.cmp_fn = self.cmp_key_non_losing
 
     @property
     def answer_depths(self) -> dict:
@@ -59,9 +82,6 @@ class SolutionTree(dict[int, 'SolutionTree']):
     def update_level(self, new_level: int) -> None:
         self.level = np.int8(new_level)
 
-    @property
-    def cmp_key(self):
-        return self.cmp_fn()
 
     def cmp_key_min_avg(self):
         # avg = (self.total_guesses / self.answers_in_tree) if self.answers_in_tree else 4
@@ -71,7 +91,22 @@ class SolutionTree(dict[int, 'SolutionTree']):
     def cmp_key_non_losing(self):
         return not (self.level + self.max_guess_depth <= 6), self.total_guesses, not self.is_answer
 
+    @classmethod
+    def set_cmp_policy(cls, policy: PrioritizationPolicy):
+        def minimize_average_policy(tree1: SolutionTree, tree2: SolutionTree):
+            return tree1.cmp_key_min_avg() < tree2.cmp_key_min_avg()
+
+        def non_losing_policy(tree1: SolutionTree, tree2: SolutionTree):
+            return tree1.cmp_key_non_losing() < tree2.cmp_key_non_losing()
+
+        match policy:
+            case PrioritizationPolicy.MINIMIZE_AVERAGE:
+                cls.__lt__ = minimize_average_policy
+            case PrioritizationPolicy.NON_LOSING:
+                cls.__lt__ = non_losing_policy
+
     def __str__(self) -> str:
+        # deprecate?
         # guess and number of guesses
         base = f'{self.guess_id}{self.level + 1} [{self.total_guesses} g, {self.total_guesses / self.answers_in_tree:.2f} avg]'
         sb = [base]
@@ -92,5 +127,3 @@ class SolutionTree(dict[int, 'SolutionTree']):
             lines = "\n    ".join(val.as_str(word_by_id, pattern_by_id).splitlines())
             sb.append(f"\n    - {pattern_by_id[key]}: {lines}")
         return ''.join(sb)
-
-
