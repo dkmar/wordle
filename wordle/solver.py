@@ -44,7 +44,7 @@ repeat by playing a candidate
 <Solver>
 '''
 
-DATA_DIR = Path.cwd() / 'wordle' / 'data'
+DATA_DIR = Path(__file__).resolve().parent / 'data'
 # original set of answers (prior to NYT acquisition) [2315]
 # (this is commonly used for benchmarks)
 ORIGINAL_HIDDEN_ANSWERS_PATH = DATA_DIR / 'original_hidden_answers.txt'

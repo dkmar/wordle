@@ -11,7 +11,7 @@ Utility for solving and exploring wordle puzzles.
 
 Install this tool using `pip`:
 
-    pip install wordle
+    pip install wordle-solver
 
 ## Usage
 
