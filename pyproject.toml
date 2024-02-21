@@ -25,3 +25,9 @@ wordle = "wordle.cli:cli"
 
 [project.optional-dependencies]
 test = ["pytest"]
+
+[tool.setuptools.packages.find]
+where = ["wordle"]
+
+[tool.setuptools.package-data]
+mypkg = ["*.txt"]
