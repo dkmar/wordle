@@ -1,5 +1,5 @@
 [project]
-name = "wordle"
+name = "wordle-solver"
 version = "0.1"
 description = "Utility for solving and exploring wordle puzzles."
 readme = "README.md"
