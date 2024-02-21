@@ -24,7 +24,7 @@ def play(answer: str | None, hard_mode: bool, debug: bool):
 
     ctx = WordleContext()
     solver = WordleSolver(ctx, hard_mode)
-    game = solver.game
+    game = solver.for_answer(answer.upper()).game if answer else solver.game
 
     if not debug:
         click.echo('Key:')
@@ -170,16 +170,26 @@ def bench(n: int, starting_word: str, verbose:  bool, hard_mode: bool, optimal: 
 
 @cli.command()
 # @click.argument("n", type=int, required=False)
-# @click.option("-w", "--w", "starting_word", default='SLATE', help='Set a starting word.')
+@click.option("-w", "--w", "starting_word", default='SLATE', help='Set a starting word.')
+@click.option("-o", "optimal", is_flag=True)
 # @click.option("-v", "verbose", is_flag=True)
 # def explore(n: int | None, starting_word: str, verbose:  bool):
 @click.argument('answers', nargs=-1)
-def explore(answers):
+def explore(starting_word: str, optimal: bool, answers):
+    solver = WordleSolver(
+        WordleContext(),
+        hard_mode=True
+    )
+    if optimal:
+        click.echo('Building optimal tree... ', nl=False)
+        solver = solver.with_optimal_tree(starting_word, read_cached=True)
+        click.echo('Done.')
+
     # answer guesses...
     for answer in map(str.upper, answers):
         assert len(answer) == 5
 
-        game_results = solve(answer, 'SLATE', hard_mode=True)
+        game_results = solve(answer, starting_word, solver)
 
         offset = ''
         print(answer, len(game_results))
