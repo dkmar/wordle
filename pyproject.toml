@@ -14,6 +14,12 @@ dependencies = [
     "numpy"
 ]
 
+[tool.setuptools.packages.find]
+where = ["."]
+
+[tool.setuptools.package-data]
+wordle = ["data/*"]
+
 [project.urls]
 Homepage = "https://github.com/dkmar/wordle"
 Changelog = "https://github.com/dkmar/wordle/releases"
@@ -25,3 +31,4 @@ wordle = "wordle.cli:cli"
 
 [project.optional-dependencies]
 test = ["pytest"]
+
