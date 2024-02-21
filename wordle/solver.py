@@ -263,32 +263,6 @@ class WordleSolver:
                    scaled_word_freqs, can_be_answer)
         return [guess_info for guess_info in info]
 
-    def _best_guesses(self,
-                      possible_guesses: WordIndexArray,
-                      possible_answers: WordIndexArray,
-                      k: int = 20
-                      ) -> np.ndarray:
-        ctx = self.context
-        if possible_answers.size == 1:
-            return possible_answers
-
-        if possible_guesses.size <= k:
-            return possible_guesses
-
-        if self.hard_mode:
-            keys = heuristics.pillar_aware_heuristic(ctx.guess_feedbacks_array, ctx.pillars_of_doom,
-                                                     possible_guesses, possible_answers)
-        else:
-            keys = heuristics.basic_heuristic(ctx.guess_feedbacks_array, possible_guesses, possible_answers)
-
-        if k == 1:
-            i = lexmax(*keys) if len(keys) > 1 else np.argmax(keys[0])
-            return possible_guesses[[i]]
-
-        key = np.fromiter(zip(*keys), dtype='f,b') if len(keys) > 1 else keys[0]
-        inds = np.argpartition(key, -k)[-k:]
-        return possible_guesses[inds]
-
 
     def best_guesses(self,
                      possible_guesses: WordIndexArray,
@@ -440,22 +414,22 @@ class SolutionTreeView:
         return self.__class__(self.context, self.tree[pattern_index[item]])
 
 
-def best_starts(write_file=False):
-    solver = WordleSolver(hard_mode=True, use_original_answer_list=True).for_answer('')
-    # for start in 'SLATE', 'TARSE', 'LEAST', 'CRANE', 'SALET', 'LEAPT', 'STEAL':
-    for start in ['SALET']:
-        tree = solver.map_solutions(start, find_optimal=True)
-        cnts = tree.answer_depth_distribution
-
-        s = '{}: {} total, {:.3f} avg, {} worst, {} fails'.format(
-            start,
-            tree.total_guesses,
-            tree.total_guesses / tree.answers_in_tree,
-            tree.max_guess_depth,
-            sum(cnts[d] for d in range(7, tree.max_guess_depth + 1))
-        )
-        print(s)
-        if write_file:
-            with open(f'tree_{start}_v5.txt', 'w') as out:
-                out.write(str(tree))
+# def best_starts(write_file=False):
+#     solver = WordleSolver(hard_mode=True, use_original_answer_list=True).for_answer('')
+#     # for start in 'SLATE', 'TARSE', 'LEAST', 'CRANE', 'SALET', 'LEAPT', 'STEAL':
+#     for start in ['SALET']:
+#         tree = solver.map_solutions(start, find_optimal=True)
+#         cnts = tree.answer_depth_distribution
+#
+#         s = '{}: {} total, {:.3f} avg, {} worst, {} fails'.format(
+#             start,
+#             tree.total_guesses,
+#             tree.total_guesses / tree.answers_in_tree,
+#             tree.max_guess_depth,
+#             sum(cnts[d] for d in range(7, tree.max_guess_depth + 1))
+#         )
+#         print(s)
+#         if write_file:
+#             with open(f'tree_{start}_v5.txt', 'w') as out:
+#                 out.write(str(tree))
 
