@@ -7,7 +7,7 @@ from wordle.solver import WordleContext, WordleSolver
 
 
 @click.group()
-@click.version_option()
+@click.version_option(package_name='wordle-solver')
 def cli():
     "Utility for solving and exploring wordle puzzles."
 
