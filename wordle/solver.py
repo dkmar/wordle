@@ -158,20 +158,19 @@ class WordleSolver:
 
     def with_optimal_tree(self, starting_word: str, read_cached: bool = False):
         self.optimal = True
+        import pickle
 
-        # import pickle
-        # path = Path(f'wordle/data/{starting_word}_tree.pickle')
-        # if read_cached and path.exists():
-        #     with open(path, 'rb') as f:
-        #         self.solution_tree = pickle.load(f)
-        # else:
-        #     self.solution_tree = self.map_solutions(starting_word, find_optimal=True)
-        #     with open(path, 'wb') as f:
-        #         pickle.dump(self.solution_tree, f)
-        #
-        # return self
-        solution_tree = self.map_solutions(starting_word, find_optimal=True)
-        self.solution_tree = SolutionTreeView(self.context, solution_tree)
+        path = DATA_DIR / f'{starting_word}_tree_{len(self.possible_answers)}.pickle'
+        if read_cached and path.exists():
+            with open(path, 'rb') as f:
+                solution_tree = pickle.load(f)
+                self.solution_tree = SolutionTreeView(self.context, solution_tree)
+        else:
+            solution_tree = self.map_solutions(starting_word, find_optimal=True)
+            with open(path, 'wb') as f:
+                pickle.dump(solution_tree, f)
+            self.solution_tree = SolutionTreeView(self.context, solution_tree)
+
         return self
 
 
@@ -415,9 +414,12 @@ class SolutionTreeView:
 
 
 # def best_starts(write_file=False):
-#     solver = WordleSolver(hard_mode=True, use_original_answer_list=True).for_answer('')
+#     solver = WordleSolver(
+#         WordleContext(),
+#         hard_mode=True
+#     )
 #     # for start in 'SLATE', 'TARSE', 'LEAST', 'CRANE', 'SALET', 'LEAPT', 'STEAL':
-#     for start in ['SALET']:
+#     for start in ['SLATE']:
 #         tree = solver.map_solutions(start, find_optimal=True)
 #         cnts = tree.answer_depth_distribution
 #
@@ -430,6 +432,8 @@ class SolutionTreeView:
 #         )
 #         print(s)
 #         if write_file:
-#             with open(f'tree_{start}_v5.txt', 'w') as out:
-#                 out.write(str(tree))
-
+#             with open(f'tree_{start}_v8.txt', 'w') as out:
+#                 out.write(tree.as_str(solver.context.words, solver.context.patterns))
+#
+#
+# best_starts(write_file=True)
