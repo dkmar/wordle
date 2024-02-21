@@ -1,13 +1,10 @@
+import functools
 import click
 import itertools
-# import wordle.evaluation as evaluation
+import numpy as np
 from wordle.lib import Pattern
-from wordle.solver import Wordle, Game
-# if __name__ == '__main__':
-#     import wordle.evaluation as evaluation
-#     from wordle.evaluation import GUESSES, guess_index, get_possible_words, best_guess, guess_feedbacks_array, refine_wordset
-# from wordle.evaluation import GUESSES, guess_index, get_possible_words, best_guess, guess_feedbacks_array, \
-#         refine_wordset
+from wordle.solver import WordleContext, WordleSolver
+
 
 @click.group()
 @click.version_option()
@@ -18,85 +15,153 @@ def cli():
 @cli.command()
 @click.argument("answer", type=str, required=False)
 @click.option("-h", "hard_mode", is_flag=True)
-def play(answer: str | None, hard_mode: bool):
-    "Play a game interactively."
-    game = Game(answer, hard_mode=hard_mode)
+@click.option("--debug", "debug", is_flag=True)
+def play(answer: str | None, hard_mode: bool, debug: bool):
+    """ Play a game interactively. """
+    # if answer not in ANSWERS:
+    #     click.echo('Given answer is not in answer set.')
+    #     return
+
+    ctx = WordleContext()
+    solver = WordleSolver(ctx, hard_mode)
+    game = solver.for_answer(answer.upper()).game if answer else solver.game
+
+    if not debug:
+        click.echo('Key:')
+        click.echo('   #) Guess:  Expected Score | Expected Information | Possible Answer?\n')
 
     for round_number in itertools.count(1):
         remaining = len(game.possible_answers)
+        # if remaining == 0:
+        #     click.echo('Error: 0 possible answers.')
+        #     break
         click.echo(f'Round {round_number}')
         click.echo(f'# possible answers: {remaining}')
+        if debug:
+            click.echo(f'Remaining Entropy: {np.log2(game.possible_answers.size):.2f}')
+        click.echo('-'*24)
 
-        for guess, entropy, parts, max_part_size, freq, is_possible in game.top_guesses():
+        for i, info in enumerate(solver.top_guesses_info(20), 1):
+            (guess, score, entropy, parts, max_part_size, pillar_parts, freq, is_possible) = info
             possible_symbol = '✅' if is_possible else '❌'
-            click.echo(f'\t{guess}: {entropy:.2f} {parts} {max_part_size} {freq:>10.2f} {possible_symbol}')
+            fb = solver.grade_guess(guess, answer) if answer else ''
+
+            if debug:
+                click.echo(
+                    '  {0:>2d}) {1}: {2:.1f} {3:.2f} {4:>.2f} {5:>3d} {6:>2d} {7:>8.2f} {8} {9}'.format(
+                        i, guess,
+                        score,
+                        entropy,
+                        parts, max_part_size,
+                        pillar_parts,
+                        freq,
+                        possible_symbol,
+                        fb
+                    )
+                )
+            else:
+                click.echo(
+                    '  {0:>2d}) {1}:  {2:.1f}  {3:.2f}  {4}'.format(
+                        i, guess,
+                        score,
+                        entropy,
+                        possible_symbol
+                    )
+                )
 
         click.echo()
-        guess = click.prompt('Guess').upper()
+        while (guess := click.prompt('Guess').upper()) not in ctx.word_index:
+            click.echo('Invalid guess. Please try again.')
+
         if answer is None:
-            feedback = click.prompt('Feedback').upper()
-            fb = Pattern.from_str(feedback)
-            game.play(guess, fb)
+            while True:
+                feedback = click.prompt('Feedback').upper()
+                try:
+                    fb = Pattern.from_str(feedback)
+                    break
+                except ValueError:
+                    click.echo('Invalid feedback. Example: GGY_Y for 🟩🟩🟨⬛🟨')
+
+            solver.play(guess, fb)
             click.echo(guess)
             click.echo(fb)
         else:
-            fb = game.play(guess)
+            fb = solver.play(guess)
             click.echo(guess)
             click.echo(fb)
+
         print()
-
         if fb == '🟩🟩🟩🟩🟩':
+            print('----- SUCCESS ')
+            for guess, feedback in game.history.items():
+                print(guess, feedback)
             break
-        # actual_entropy = evaluation.actual_info_from_guess(guess, fb, possible_words)
-        # click.echo(f'{fb} {actual_entropy} Bits')
 
+
+def solve(answer: str, starting_word: str, solver: WordleSolver) -> dict[str]:
+    solver.new_game(answer)
+    game = solver.game
+    feedback = solver.play(starting_word)
+
+    rounds = 1
+    while feedback != '🟩🟩🟩🟩🟩' and rounds < 10:
+        rounds += 1
+        guess = solver.best_guess()
+        feedback = solver.play(guess)
+
+
+    return game.history
 
 
 @cli.command()
-@click.argument("n", type=int, required=False)
+@click.argument("n", type=int, required=False, default=0)
 @click.option("-w", "--w", "starting_word", default='SLATE', help='Set a starting word.')
 @click.option("-v", "verbose", is_flag=True)
 @click.option("-h", "hard_mode", is_flag=True)
-def bench(n: int | None, starting_word: str, verbose:  bool, hard_mode: bool):
-    starting_word = starting_word.upper()
-    with open('wordle/data/wordlist_nyt20230701_hidden', 'r') as f:
-        words = map(str.strip, f)
-        REAL_ANSWER_SET = tuple(map(str.upper, words))
+@click.option("-o", "optimal", is_flag=True)
+@click.option("--against-original-answers", "against_original_answers", is_flag=True)
+def bench(n: int, starting_word: str, verbose:  bool, hard_mode: bool, optimal: bool, against_original_answers: bool):
+    from wordle.solver import read_words_from_file, ALL_HIDDEN_ANSWERS_PATH, ORIGINAL_HIDDEN_ANSWERS_PATH, DATA_DIR
+    answers_path = ORIGINAL_HIDDEN_ANSWERS_PATH if against_original_answers else ALL_HIDDEN_ANSWERS_PATH
+    # answers_path = DATA_DIR / 'wordle-tools-answer-set-real.txt'
+    answers = read_words_from_file(answers_path)
+    if n:
+        answers = answers[:n]
 
-    def solve(answer: str) -> list[str]:
-        game = Game(answer, hard_mode=hard_mode)
-        feedback = game.play(starting_word)
-
-        rounds = 1
-        while feedback != '🟩🟩🟩🟩🟩' and rounds < 10:
-            rounds += 1
-            guess = game.best_guess()
-            feedback = game.play(guess)
-
-        return game.history
-
-    answers = REAL_ANSWER_SET[:n] if n else REAL_ANSWER_SET
     N = len(answers)
     total_rounds_needed = 0
     count_failed = 0
 
-    game_results = map(solve, answers)
+    solver = WordleSolver(
+        WordleContext(against_original_answers),
+        hard_mode
+    )
+
+    if optimal:
+        click.echo('Building optimal tree... ', nl=False)
+        solver = solver.with_optimal_tree(starting_word)
+        click.echo('Done.')
+
+    solve_game = functools.partial(solve, solver=solver, starting_word=starting_word.upper())
+    game_results = map(solve_game, answers)
     items = zip(range(1, N+1), answers, game_results)
-    print_info = lambda item: f'[{item[0]}] {item[1]} {len(item[2])} {total_rounds_needed/item[0]:.2f}' if item else None
+    # returns None when item is None
+    print_info = lambda item: item and f'[{item[0]}] {item[1]} {len(item[2])} {(total_rounds_needed + min(len(item[2]), 7))/item[0]:.2f}'
 
     with click.progressbar(items,
                            length=N,
                            item_show_func=print_info) as solution_info:
         for i, ans, result in solution_info:
             rnds = len(result)
-            total_rounds_needed += rnds
+            # TrackVol said for accurate averages counting, we should count all failures as just 7.
+            total_rounds_needed += min(rnds, 7)
             if rnds > 6:
                 count_failed += 1
-                print('\n', result, '\n')
+                print('\n', result[starting_word], ans, result, '\n')
             elif verbose:
                 print()
-                for guess in result:
-                    print('  ', guess)
+                for guess, feedback in result.items():
+                    print('  ', guess, feedback)
 
 
     avg = total_rounds_needed / N
@@ -104,12 +169,57 @@ def bench(n: int | None, starting_word: str, verbose:  bool, hard_mode: bool):
     click.echo(f'Failed: {count_failed}')
 
 @cli.command()
-@click.argument("n", type=int, required=False)
+# @click.argument("n", type=int, required=False)
 @click.option("-w", "--w", "starting_word", default='SLATE', help='Set a starting word.')
-@click.option("-v", "verbose", is_flag=True)
-def explore(n: int | None, starting_word: str, verbose:  bool):
+@click.option("-o", "optimal", is_flag=True)
+# @click.option("-v", "verbose", is_flag=True)
+# def explore(n: int | None, starting_word: str, verbose:  bool):
+@click.argument('answers', nargs=-1)
+def explore(starting_word: str, optimal: bool, answers):
+    solver = WordleSolver(
+        WordleContext(),
+        hard_mode=True
+    )
+    if optimal:
+        click.echo('Building optimal tree... ', nl=False)
+        solver = solver.with_optimal_tree(starting_word, read_cached=True)
+        click.echo('Done.')
+
     # answer guesses...
-    pass
+    for answer in map(str.upper, answers):
+        assert len(answer) == 5
+
+        game_results = solve(answer, starting_word, solver)
+
+        offset = ''
+        print(answer, len(game_results))
+        for guess, feedback in game_results.items():
+            print(offset, guess, feedback)
+            # offset += ' '
+
+
+@cli.command()
+def leaderboard():
+    solver = WordleSolver(
+        WordleContext(using_original_answer_set=True),
+        hard_mode=True
+    ).with_optimal_tree(starting_word='SALET')
+    tree = solver.solution_tree
+
+    def find_path(answer: str) -> str:
+        path = [tree.guess]
+        curr = tree
+        while curr.guess != answer:
+            curr = curr[solver.grade_guess(curr.guess, answer)]
+            path.append(curr.guess)
+
+        return ','.join(path)
+
+    from wordle.solver import read_words_from_file, ORIGINAL_HIDDEN_ANSWERS_PATH
+    original_answers = read_words_from_file(ORIGINAL_HIDDEN_ANSWERS_PATH)
+    for ans in original_answers:
+        click.echo(find_path(ans))
+
 
 @cli.command(name="command")
 @click.argument(
