@@ -74,6 +74,7 @@ def get_guess_feedbacks_array(guesses: Sequence[str],
     try:
         guess_feedbacks_array = np.load(file_path)
     except (OSError, ValueError) as e:
+        print('Building guess feedbacks array...')
         guess_feedbacks_array = compute_guess_feedbacks_array(guesses, answers, pattern_index)
         np.save(file_path, guess_feedbacks_array)
 
