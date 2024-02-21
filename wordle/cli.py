@@ -3,7 +3,7 @@ import click
 import itertools
 import numpy as np
 from wordle.lib import Pattern
-from wordle.solverfinal import WordleContext, WordleSolver
+from wordle.solver import WordleContext, WordleSolver
 
 
 @click.group()
@@ -121,8 +121,9 @@ def solve(answer: str, starting_word: str, solver: WordleSolver) -> dict[str]:
 @click.option("-o", "optimal", is_flag=True)
 @click.option("--against-original-answers", "against_original_answers", is_flag=True)
 def bench(n: int, starting_word: str, verbose:  bool, hard_mode: bool, optimal: bool, against_original_answers: bool):
-    from wordle.solverfinal import read_words_from_file, ALL_HIDDEN_ANSWERS_PATH, ORIGINAL_HIDDEN_ANSWERS_PATH
-    answers_path = ORIGINAL_HIDDEN_ANSWERS_PATH if against_original_answers else ALL_HIDDEN_ANSWERS_PATH
+    from wordle.solver import read_words_from_file, ALL_HIDDEN_ANSWERS_PATH, ORIGINAL_HIDDEN_ANSWERS_PATH, DATA_DIR
+    # answers_path = ORIGINAL_HIDDEN_ANSWERS_PATH if against_original_answers else ALL_HIDDEN_ANSWERS_PATH
+    answers_path = DATA_DIR / 'wordle-tools-answer-set-real.txt'
     answers = read_words_from_file(answers_path)
     if n:
         answers = answers[:n]
@@ -204,7 +205,7 @@ def leaderboard():
 
         return ','.join(path)
 
-    from wordle.solverfinal import read_words_from_file, ORIGINAL_HIDDEN_ANSWERS_PATH
+    from wordle.solver import read_words_from_file, ORIGINAL_HIDDEN_ANSWERS_PATH
     original_answers = read_words_from_file(ORIGINAL_HIDDEN_ANSWERS_PATH)
     for ans in original_answers:
         click.echo(find_path(ans))
