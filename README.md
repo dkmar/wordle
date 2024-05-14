@@ -7,21 +7,27 @@
 
 Utility for solving and exploring wordle puzzles.
 
-## Installation
-
-Install this tool using `pip`:
-
-    pip install wordle-solver
-
 ## Usage
+
+Play interactively:
+
+    wordle play [-h]
+<img width="787" alt="image" src="https://github.com/dkmar/wordle/assets/31838716/f0100956-052b-47f9-aed1-729bf7136a90">
 
 For help, run:
 
     wordle --help
 
-You can also use:
+## Performance:
+<img width="516" alt="image" src="https://github.com/dkmar/wordle/assets/31838716/8e260d66-8312-45f7-940a-fe39cb023344">
 
-    python -m wordle --help
+(per this [online leaderboard](https://freshman.dev/wordle/leaderboard?mode=hard) for hard-mode using the original 2315-word answer set)
+    
+## Installation
+
+Install this tool using `pip`:
+
+    pip install wordle-solver
 
 ## Development
 
