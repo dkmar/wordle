@@ -32,16 +32,13 @@ def play(answer: str | None, hard_mode: bool, debug: bool):
 
     for round_number in itertools.count(1):
         remaining = len(game.possible_answers)
-        # if remaining == 0:
-        #     click.echo('Error: 0 possible answers.')
-        #     break
         click.echo(f'Round {round_number}')
         click.echo(f'# possible answers: {remaining}')
         if debug:
             click.echo(f'Remaining Entropy: {np.log2(game.possible_answers.size):.2f}')
         click.echo('-'*24)
 
-        for i, info in enumerate(solver.top_guesses_info(20), 1):
+        for i, info in enumerate(solver.top_guesses_info(10), 1):
             (guess, score, entropy, parts, max_part_size, pillar_parts, freq, is_possible) = info
             possible_symbol = '✅' if is_possible else '❌'
             fb = solver.grade_guess(guess, answer) if answer else ''
@@ -70,32 +67,44 @@ def play(answer: str | None, hard_mode: bool, debug: bool):
                 )
 
         click.echo()
-        while (guess := click.prompt('Guess').upper()) not in ctx.word_index:
-            click.echo('Invalid guess. Please try again.')
+        match remaining:
+            case 0:
+                click.echo('Error: 0 possible answers.')
+                break
+            case 1:
+                fb = '🟩🟩🟩🟩🟩'
+                solver.play(info[0], fb)
+                print('----- SUCCESS ')
+                for guess, feedback in game.history.items():
+                    print(guess, feedback)
+                break
+            case _:
+                while (guess := click.prompt('Guess').upper()) not in ctx.word_index:
+                    click.echo('Invalid guess. Please try again.')
 
-        if answer is None:
-            while True:
-                feedback = click.prompt('Feedback').upper()
-                try:
-                    fb = Pattern.from_str(feedback)
+                if answer is None:
+                    while True:
+                        feedback = click.prompt('Feedback').upper()
+                        try:
+                            fb = Pattern.from_str(feedback)
+                            break
+                        except ValueError:
+                            click.echo('Invalid feedback. Example: GGY_Y for 🟩🟩🟨⬛🟨')
+
+                    solver.play(guess, fb)
+                    click.echo(guess)
+                    click.echo(fb)
+                else:
+                    fb = solver.play(guess)
+                    click.echo(guess)
+                    click.echo(fb)
+
+                print()
+                if fb == '🟩🟩🟩🟩🟩':
+                    print('----- SUCCESS ')
+                    for guess, feedback in game.history.items():
+                        print(guess, feedback)
                     break
-                except ValueError:
-                    click.echo('Invalid feedback. Example: GGY_Y for 🟩🟩🟨⬛🟨')
-
-            solver.play(guess, fb)
-            click.echo(guess)
-            click.echo(fb)
-        else:
-            fb = solver.play(guess)
-            click.echo(guess)
-            click.echo(fb)
-
-        print()
-        if fb == '🟩🟩🟩🟩🟩':
-            print('----- SUCCESS ')
-            for guess, feedback in game.history.items():
-                print(guess, feedback)
-            break
 
 
 def solve(answer: str, starting_word: str, solver: WordleSolver) -> dict[str]:
